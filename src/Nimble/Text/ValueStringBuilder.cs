@@ -97,9 +97,9 @@ public ref struct ValueStringBuilder : IDisposable
     /// </summary>
     public int Capacity
     {
-            readonly get => _span.Length;
+        readonly get => _span.Length;
 
-            set
+        set
         {
             if (value > _span.Length)
             {
@@ -122,9 +122,9 @@ public ref struct ValueStringBuilder : IDisposable
     /// </summary>
     public int Length
     {
-            readonly get => _position;
+        readonly get => _position;
 
-            set => _position = value;
+        set => _position = value;
     }
 
     #endregion
@@ -164,7 +164,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="index"> The position of the character. </param>
     public char this[int index]
     {
-        get => _span[index];
+        readonly get => _span[index];
         set => _span[index] = value;
     }
 
@@ -218,7 +218,7 @@ public ref struct ValueStringBuilder : IDisposable
 
     private readonly unsafe void FastCopy(ReadOnlySpan<char> source, Span<char> destination)
     {
-        fixed (char* s = source, d = destination) Unsafe.CopyBlock(d, s, (uint)source.Length);
+        fixed (char* s = source, d = destination) Unsafe.CopyBlock(d, s, (uint)source.Length * 2);
     }
 
     /// <summary>
