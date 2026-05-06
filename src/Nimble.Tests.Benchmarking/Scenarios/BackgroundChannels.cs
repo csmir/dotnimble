@@ -11,6 +11,11 @@ public class BackgroundChannels
         value *= 10;
     });
 
+    public BackgroundChannels()
+    {
+        Channel.StartReading();
+    }
+
     [Benchmark]
     public void CreateBackgroundChannel()
     {
