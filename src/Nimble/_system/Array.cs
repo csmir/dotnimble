@@ -1,4 +1,5 @@
 ﻿using Nimble.Collections.Generic;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 namespace System;
@@ -6,6 +7,7 @@ namespace System;
 /// <summary>
 ///     Extension methods for <see cref="Array"/>.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class ArrayExtensions
 {
     extension(Array array)

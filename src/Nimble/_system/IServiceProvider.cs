@@ -1,8 +1,11 @@
-﻿namespace System;
+﻿using System.ComponentModel;
+
+namespace System;
 
 /// <summary>
 ///     Provides extension methods for the <see cref="IServiceProvider"/> interface.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class ServiceProviderExtensions
 {
     internal sealed class EmptyServiceProvider : IServiceProvider

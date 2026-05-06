@@ -1,8 +1,11 @@
-﻿namespace System;
+﻿using System.ComponentModel;
+
+namespace System;
 
 /// <summary>
 ///     Provides extensions for the <see cref="Enum"/> primitive type.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class EnumExtensions
 {
     extension(Enum enm)
