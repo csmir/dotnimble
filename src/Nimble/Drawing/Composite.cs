@@ -423,8 +423,8 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         // https://stackoverflow.com/questions/9018016/how-to-compare-two-colors-for-similarity-difference
         // use CIE-LAB color space for better perceptual distance measurement
 
-        GetLAB(out var l1, out var a1, out var b1);
-        o.GetLAB(out var l2, out var a2, out var b2);
+        GetCIELAB(out var l1, out var a1, out var b1);
+        o.GetCIELAB(out var l2, out var a2, out var b2);
 
         // get deltaE between the two colors using CIE76 formula
         // https://en.wikipedia.org/wiki/Color_difference#CIE76
@@ -512,11 +512,29 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     ///     Gets the CIE-LAb color space representation of the current value as L*, A*, B*.
     /// </summary>
     /// <returns>A <see cref="ValueTuple{T1, T2, T3}"/> containing L, A, B.</returns>
-    public (float L, float A, float B) GetLAB()
+    public (float L, float A, float B) GetCIELAB()
     {
-        GetLAB(out var l, out var a, out var b);
+        GetCIELAB(out var l, out var a, out var b);
 
         return (l, a, b);
+    }
+
+    /// <summary>
+    ///     Gets the OKLAB color space representation of the current value as L, A, B.
+    /// </summary>
+    /// <returns>A <see cref="ValueTuple{T1, T2, T3}"/> containing L, A, B.</returns>
+    public (float L, float A, float B) GetOKLAB()
+    {
+        GetOKLAB(out var l, out var a, out var b);
+
+        return (l, a, b);
+    }
+
+    public (float L, float C, float h) GetOKLCH()
+    {
+        GetOKLCH(out var l, out var c, out var h);
+
+        return (l, c, h);
     }
 
     /// <summary>
@@ -856,9 +874,19 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
                 }
             case CompositeFormat.CIELAB:
                 {
-                    var (l, a, b) = GetLAB();
+                    var (l, a, b) = GetCIELAB();
 
-                    return $"lab({l}, {a}, {b})";
+                    return $"cielab({l}, {a}, {b})";
+                }
+            case CompositeFormat.OKLAB:
+                {
+                    var (l, a, b) = GetOKLAB();
+                    return $"oklab({l}, {a}, {b})";
+                }
+                case CompositeFormat.OKLCH:
+                {
+                    var (l, c, h) = GetOKLCH();
+                    return $"oklch({l}, {c}, {h})";
                 }
             case CompositeFormat.HEX:
                 {
@@ -903,7 +931,39 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         => CIEXYZ(VLinear(R), VLinear(G), VLinear(B), out x, out y, out z);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void GetLAB(out float l, out float a, out float b)
+    private void GetOKLCH(out float l, out float c, out float h)
+    {
+        GetOKLAB(out var lS, out var aS, out var bS);
+
+        l = lS;
+        c = (float)Math.Sqrt(aS * aS + bS * bS);
+        h = (float)(Math.Atan2(bS, aS) * (180 / Math.PI));
+
+        if (h < 0)
+            h += 360f;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void GetOKLAB(out float l, out float a, out float b)
+    {
+        GetXYZ(out var x, out var y, out var z);
+
+        // https://bottosson.github.io/posts/oklab/#converting-from-xyz-to-oklab
+        var lS = 0.8189330101f * x + 0.3618667424f * y - 0.1288597137f * z;
+        var mS = 0.0329845436f * x + 0.9293118715f * y + 0.0361456387f * z;
+        var sS = 0.0482003018f * x + 0.2643662691f * y + 0.6338517070f * z;
+
+        var lS3 = lS * lS * lS;
+        var mS3 = mS * mS * mS;
+        var sS3 = sS * sS * sS;
+
+        l = (lS3 * 0.2104542553f) + (mS3 * 0.7936177850f) - (sS3 * 0.0040720468f);
+        a = (lS3 * 1.9779984951f) - (mS3 * 2.4285922050f) + (sS3 * 0.4505937099f);
+        b = (lS3 * 0.0259040371f) + (mS3 * 0.7827717662f) - (sS3 * 0.8086757660f);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void GetCIELAB(out float l, out float a, out float b)
     {
         GetXYZ(out var x, out var y, out var z);
 

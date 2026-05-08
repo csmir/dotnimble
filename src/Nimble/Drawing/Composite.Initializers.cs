@@ -57,4 +57,13 @@ public readonly partial struct Composite
 
         return new(value);
     }
+
+#if NET6_0_OR_GREATER
+    /// <summary>
+    ///     Creates a new <see cref="Composite"/> instance with a random value. This method is only available on .NET 6.0 or later due to the use of <see cref="Random.Shared"/>.
+    /// </summary>
+    /// <returns>A <see cref="Composite"/> instance with a random value.</returns>
+    public static Composite FromRandom() 
+        => new((uint)Random.Shared.Next());
+#endif
 }

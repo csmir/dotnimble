@@ -43,9 +43,19 @@ public enum CompositeFormat
     CIELAB = 6,
 
     /// <summary>
+    ///     Ok-LAb format, representing colors in a perceptually uniform color space designed to be more accurate and consistent across different devices and lighting conditions compared to CIE-LAb.
+    /// </summary>
+    OKLAB = 7,
+
+    /// <summary>
+    ///     Ok-LCh format, representing colors in a cylindrical representation of the OK-LAb color space, where L is lightness, C is chroma, and h is hue.
+    /// </summary>
+    OKLCH = 8,
+
+    /// <summary>
     ///     Hexadecimal format, representing colors as a string of hexadecimal digits (e.g., #RRGGBB or #RRGGBBAA).
     /// </summary>
-    HEX = 7,
+    HEX = 9,
 
     // We can add more formats later if needed, but these should cover most use cases.
 }
