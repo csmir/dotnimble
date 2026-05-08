@@ -1,10 +1,12 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.ComponentModel;
+using System.Text.RegularExpressions;
 
 namespace System;
 
 /// <summary>
 ///     Extensions for <see cref="TimeSpan"/>
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class TimeSpanExtensions
 {
     private static readonly Dictionary<string, Func<string, TimeSpan>> _callback;

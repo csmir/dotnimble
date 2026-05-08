@@ -1,8 +1,11 @@
-﻿namespace System;
+﻿using System.ComponentModel;
+
+namespace System;
 
 /// <summary>
 ///     Extension methods for <see cref="Exception"/>.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class ExceptionExtensions
 {
     extension(ArgumentException ex)

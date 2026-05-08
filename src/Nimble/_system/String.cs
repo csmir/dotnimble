@@ -1,10 +1,12 @@
-﻿using System.Text;
+﻿using System.ComponentModel;
+using System.Text;
 
 namespace System;
 
 /// <summary>
 ///     Provides extensions for the <see cref="string"/> primitive type.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class StringExtensions
 {
     extension(string str)
