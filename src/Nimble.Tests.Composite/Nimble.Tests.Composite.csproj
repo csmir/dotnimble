@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\Nimble\Nimble.csproj" />
+    <ProjectReference Include="..\Nimble\Nimble.csproj" />
   </ItemGroup>
 
 </Project>
