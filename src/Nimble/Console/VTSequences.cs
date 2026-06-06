@@ -763,7 +763,7 @@ public static class VTSequences
             public const string ModifyScreenColor = "\e]4;{0};{1}/{2}/{3}\e\x5C";
 
             /// <summary>
-            ///     Converts a <see cref="ConsoleColor"/> to its corresponding ANSI color code sequence. The <c>isBackground</c> parameter controls whether the returned sequence is for the foreground or background color.
+            ///     Converts a <see cref="ConsoleColor"/> to its corresponding ANSI color code sequence. The <paramref name="isBackground"/> parameter controls whether the returned sequence is for the foreground or background color.
             /// </summary>
             /// <param name="color">The <see cref="ConsoleColor"/> to convert.</param>
             /// <param name="isBackground">Indicates whether the color is for the background.</param>
