@@ -530,6 +530,10 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         return (l, a, b);
     }
 
+    /// <summary>
+    ///     Gets the OKLCH color space representation of the current value as L, C, h.
+    /// </summary>
+    /// <returns>A <see cref="ValueTuple{T1, T2, T3}"/> containing L, C, h.</returns>
     public (float L, float C, float h) GetOKLCH()
     {
         GetOKLCH(out var l, out var c, out var h);

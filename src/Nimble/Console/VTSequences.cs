@@ -761,6 +761,62 @@ public static class VTSequences
             ///     Additionally, it must end with the terminator sequence <c>"\e\x5C"</c>. <c>"\x7"</c> may be used instead, but the longer form is preferred.
             /// </remarks>
             public const string ModifyScreenColor = "\e]4;{0};{1}/{2}/{3}\e\x5C";
+
+            /// <summary>
+            ///     Converts a <see cref="ConsoleColor"/> to its corresponding ANSI color code sequence. The <c>isBackground</c> parameter controls whether the returned sequence is for the foreground or background color.
+            /// </summary>
+            /// <param name="color">The <see cref="ConsoleColor"/> to convert.</param>
+            /// <param name="isBackground">Indicates whether the color is for the background.</param>
+            /// <returns>The ANSI color code sequence.</returns>
+            /// <exception cref="ArgumentOutOfRangeException">Thrown when the <paramref name="color"/> is not a valid <see cref="ConsoleColor"/> value.</exception>
+            public static string FromConsoleColor(ConsoleColor color, bool isBackground = false)
+            {
+                if (color < ConsoleColor.Black || color > ConsoleColor.White)
+                    throw new ArgumentOutOfRangeException(nameof(color), $"Invalid console color: {color}");
+
+                if (isBackground)
+#pragma warning disable CS8524 // The switch expression does not handle some values of its input type (it is not exhaustive) involving an unnamed enum value.
+                    return color switch
+                    {
+                        ConsoleColor.Black => BackgroundBlack,
+                        ConsoleColor.DarkRed => BackgroundRed,
+                        ConsoleColor.DarkGreen => BackgroundGreen,
+                        ConsoleColor.DarkYellow => BackgroundYellow,
+                        ConsoleColor.DarkBlue => BackgroundBlue,
+                        ConsoleColor.DarkMagenta => BackgroundMagenta,
+                        ConsoleColor.DarkCyan => BackgroundCyan,
+                        ConsoleColor.Gray => BackgroundWhite,
+                        ConsoleColor.DarkGray => BackgroundBrightBlack,
+                        ConsoleColor.Red => BackgroundBrightRed,
+                        ConsoleColor.Green => BackgroundBrightGreen,
+                        ConsoleColor.Yellow => BackgroundBrightYellow,
+                        ConsoleColor.Blue => BackgroundBrightBlue,
+                        ConsoleColor.Magenta => BackgroundBrightMagenta,
+                        ConsoleColor.Cyan => BackgroundBrightCyan,
+                        ConsoleColor.White => BackgroundBrightWhite
+                    };
+                else
+                    return color switch
+                    {
+                        ConsoleColor.Black => ForegroundBlack,
+                        ConsoleColor.DarkRed => ForegroundRed,
+                        ConsoleColor.DarkGreen => ForegroundGreen,
+                        ConsoleColor.DarkYellow => ForegroundYellow,
+                        ConsoleColor.DarkBlue => ForegroundBlue,
+                        ConsoleColor.DarkMagenta => ForegroundMagenta,
+                        ConsoleColor.DarkCyan => ForegroundCyan,
+                        ConsoleColor.Gray => ForegroundWhite,
+                        ConsoleColor.DarkGray => ForegroundBrightBlack,
+                        ConsoleColor.Red => ForegroundBrightRed,
+                        ConsoleColor.Green => ForegroundBrightGreen,
+                        ConsoleColor.Yellow => ForegroundBrightYellow,
+                        ConsoleColor.Blue => ForegroundBrightBlue,
+                        ConsoleColor.Magenta => ForegroundBrightMagenta,
+                        ConsoleColor.Cyan => ForegroundBrightCyan,
+                        ConsoleColor.White => ForegroundBrightWhite
+                    };
+#pragma warning restore CS8524 // The switch expression does not handle some values of its input type (it is not exhaustive) involving an unnamed enum value.
+            }
         }
     }
 
