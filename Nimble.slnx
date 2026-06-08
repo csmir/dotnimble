@@ -1,5 +1,7 @@
 <Solution>
-  <Project Path="src/Nimble.Tests.Composite/Nimble.Tests.Composite.csproj" Id="798b1134-0313-48e7-b29d-66af590772c8" />
+  <Project Path="src/Nimble.Extensions/Nimble.Extensions.csproj" Id="a5cccbde-aff1-41fc-8c1a-fa457f0a3d5b" />
   <Project Path="src/Nimble.Tests.Benchmarking/Nimble.Tests.Benchmarking.csproj" Id="6840ce0c-eddc-4a9c-8f19-dfd9e85996f3" />
+  <Project Path="src/Nimble.Tests.Composite/Nimble.Tests.Composite.csproj" Id="798b1134-0313-48e7-b29d-66af590772c8" />
+  <Project Path="src/Nimble.Tests.Extensions/Nimble.Tests.Extensions.csproj" Id="f0c8c5b8-22f5-4fbe-beb1-02817123bdcf" />
   <Project Path="src/Nimble/Nimble.csproj" />
 </Solution>
