@@ -27,13 +27,19 @@ public sealed class FileLoggerOptions
     /// <param name="minLevel">The minimum level of log messages for the filter.</param>
     /// <param name="captureScopes">To enable capturing of logging scopes in the filter.</param>
     /// <returns>The same options so that multiple calls can be chained.</returns>
-    public FileLoggerOptions AddFilter(string categoryName, string filePath, LogLevel minLevel = LogLevel.Debug, bool captureScopes = true)
+    public FileLoggerOptions AddFilter(
+        string categoryName,
+        string filePath,
+        LogLevel minLevel = LogLevel.Debug,
+        bool captureScopes = true,
+        FileLogRollingMethod rollingMethod = FileLogRollingMethod.None)
     {
         _ = this.Filters.TryAdd(categoryName, new FileLoggerOptionsFilter
         {
             CaptureScopes = captureScopes,
             MinLevel = minLevel,
             FilePath = filePath,
+            RollingMethod = rollingMethod,
         });
         return this;
     }

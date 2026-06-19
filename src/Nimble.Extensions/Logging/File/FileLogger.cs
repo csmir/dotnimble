@@ -5,7 +5,6 @@ using Microsoft.Extensions.Options;
 
 internal class FileLogger : ILogger
 {
-    private readonly string _directoryName;
     private readonly string categoryName;
     private readonly IOptions<FileLoggerOptions> _options;
     private static readonly Lock _lock = new();
@@ -14,18 +13,10 @@ internal class FileLogger : ILogger
     {
         this._options = options;
         this.categoryName = categoryName;
-        this._directoryName = Path.GetDirectoryName(options.Value.GetFilter(this.categoryName)?.FilePath) ?? string.Empty;
-        if (!string.IsNullOrEmpty(this._directoryName))
-        {
-            // If the directory containing the target file name to write to does not exist; create it.
-            try
-            {
-                _ = Directory.CreateDirectory(this._directoryName);
-            }
-            catch
-            {
-            }
-        }
+
+        // Create the log folder, this optionally includes the datestamped rolling
+        // log folders when rolling logging are enabled.
+        options.Value.GetFilter(this.categoryName)?.CheckFileRolling();
     }
 
     internal IExternalScopeProvider? ScopeProvider { get; set; }
@@ -52,6 +43,9 @@ internal class FileLogger : ILogger
                 // but we need to get the filter again to get the file path.
                 var filter = this._options.Value.GetFilter(this.categoryName);
                 var message = $"[{this.categoryName}] {logLevel}: {DateTime.UtcNow} {formatter(state, exception)}{Environment.NewLine}";
+
+                // if file rolling is enabled this will update the file path in the filter to the new log file.
+                filter!.Value.CheckFileRolling();
                 try
                 {
                     System.IO.File.AppendAllText(filter!.Value.FilePath, message);
