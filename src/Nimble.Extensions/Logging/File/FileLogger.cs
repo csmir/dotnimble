@@ -18,9 +18,12 @@ internal class FileLogger : ILogger
         if (!string.IsNullOrEmpty(this._directoryName))
         {
             // If the directory containing the target file name to write to does not exist; create it.
-            if (!Directory.Exists(this._directoryName))
+            try
             {
                 _ = Directory.CreateDirectory(this._directoryName);
+            }
+            catch
+            {
             }
         }
     }
