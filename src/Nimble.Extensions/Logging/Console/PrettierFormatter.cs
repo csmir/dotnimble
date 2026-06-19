@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.Options;
 using Nimble.Console;
 using Nimble.Text;
+using SConsole = System.Console;
 
 namespace Nimble.Extensions.Logging.Console;
 
@@ -12,24 +13,23 @@ namespace Nimble.Extensions.Logging.Console;
 /// </summary>
 public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
 {
-
     private const string LOG_PREFIX = " │   ", LOG_SUFFIX = " ├── ";
 
+    private readonly WrittenLogTracker _logTracker;
     private readonly IDisposable? _optionsReloadToken;
     private PrettierFormatterOptions _options;
-    private WrittenLog? _lastWrittenLog;
-    private bool _hasWrittenBottom;
 
     /// <summary>
     ///     Creates a new instance of the <see cref="PrettierFormatter"/> class with the specified options. 
     ///     The formatter will listen for changes in the options and reload them when they change, allowing for dynamic updates to the logging behavior without needing to restart the application.
     /// </summary>
     /// <param name="options">The options monitor for <see cref="PrettierFormatterOptions"/>.</param>
-    public PrettierFormatter(IOptionsMonitor<PrettierFormatterOptions> options)
+    public PrettierFormatter(IOptionsMonitor<PrettierFormatterOptions> options, WrittenLogTracker logTracker)
         : base(nameof(PrettierFormatter))
     {
         _optionsReloadToken = options.OnChange(ReloadLoggerOptions);
         _options = options.CurrentValue;
+        _logTracker = logTracker;
     }
 
     /// <inheritdoc />
@@ -39,12 +39,11 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
 
         if (content != null)
         {
+            var writeCategory = !_logTracker.IsCategoricallyEqual(logEntry.Category, logEntry.LogLevel);
+
             string message;
-            if (!_lastWrittenLog.HasValue || !_lastWrittenLog.Value.IsSameLog(logEntry.Category, logEntry.LogLevel))
-            {
+            if (writeCategory)
                 message = $"{GetLevelText(logEntry.LogLevel)} {GetTimestampText(DateTime.Now)} {GetCategoryText(logEntry.Category)}";
-                _lastWrittenLog = new(logEntry.Category, logEntry.LogLevel, DateTime.Now);
-            }
             else
                 message = LOG_PREFIX;
 
@@ -53,8 +52,8 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
             if (content.Length > logTextWidth)
             {
                 var wrappedMessage = new ValueStringBuilder();
-                int currentIndex = 0;
 
+                int currentIndex = 0;
                 while (currentIndex < content.Length)
                 {
                     int length = Math.Min(logTextWidth, content.Length - currentIndex);
@@ -77,7 +76,15 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
                 ? string.Join($"{Environment.NewLine}{LOG_PREFIX}", content.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
                 : content;
 
+            if (SConsole.CursorLeft != 0)
+                SConsole.CursorLeft = 0;
+
+            if (!writeCategory && SConsole.CursorTop != 0)
+                SConsole.CursorTop--;
+
             textWriter.WriteLine(message);
+            textWriter.Write($"{LOG_PREFIX}{Environment.NewLine}");
+            textWriter.Write($"{VTSequences.Text.Formatting.ForegroundBrightBlack}CMD: {VTSequences.Text.Formatting.Default}");
         }
     }
 
@@ -123,13 +130,14 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
 
         var color = _options.LogLevelColors.TryGetValue(lvl, out var c) ? c : ConsoleColor.White;
 
-        return $"{LOG_PREFIX}{Environment.NewLine}{VTSequences.Text.Formatting.FromConsoleColor(color)}{GetLevelPhrase(lvl)}:";
+        return $"{VTSequences.Text.Formatting.FromConsoleColor(color)}{GetLevelPhrase(lvl)}:";
     }
 
     #endregion
 
-    private void ReloadLoggerOptions(PrettierFormatterOptions options) =>
-        _options = options;
+    private void ReloadLoggerOptions(PrettierFormatterOptions options)
+        => _options = options;
 
-    public void Dispose() => _optionsReloadToken?.Dispose();
+    public void Dispose() 
+        => _optionsReloadToken?.Dispose();
 }

@@ -45,7 +45,19 @@ public static class FormatterExtensions
 
         builder.AddConsoleFormatter<PrettierFormatter, PrettierFormatterOptions>();
         builder.AddConsole((options) => options.FormatterName = nameof(PrettierFormatter));
+        builder.Services.AddSingleton<WrittenLogTracker>();
         builder.Services.Configure(configure);
+
+        return builder;
+    }
+
+    public static ILoggingBuilder AddConsoleListener(this ILoggingBuilder builder, Action<ConsoleListenerOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        builder.Services.AddOptionsWithValidateOnStart<ConsoleListenerOptions>()
+            .Configure(configure);
+        builder.Services.AddHostedService<ConsoleListener>();
 
         return builder;
     }
