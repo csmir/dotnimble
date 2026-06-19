@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nimble.Extensions.Logging.Console;
+using Nimble.Extensions.Logging.File;
 using System.ComponentModel;
 
 namespace Nimble.Extensions.Logging;
@@ -42,12 +43,44 @@ public static class FormatterExtensions
     public static ILoggingBuilder AddPrettierConsole(this ILoggingBuilder builder, Action<PrettierFormatterOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
+        _ = builder.AddConsoleFormatter<PrettierFormatter, PrettierFormatterOptions>()
+            .AddConsole(static (options) => options.FormatterName = nameof(PrettierFormatter));
+        _ = builder.Services.AddSingleton<WrittenLogTracker>()
+            .Configure(configure);
+        return builder;
+    }
 
-        builder.AddConsoleFormatter<PrettierFormatter, PrettierFormatterOptions>();
-        builder.AddConsole((options) => options.FormatterName = nameof(PrettierFormatter));
-        builder.Services.AddSingleton<WrittenLogTracker>();
-        builder.Services.Configure(configure);
+    /// <summary>
+    /// Adds a file logging provider to the <see cref="ILoggingBuilder" />.
+    /// </summary>
+    /// <param name="builder">The <see cref="ILoggingBuilder" /> to add the provider to.</param>
+    /// <param name="configureOptions">The action used to configure the logger.</param>
+    /// <param name="clearExistingProviders">If the existing providers added to the <see cref="ILoggingBuilder" /> should be removed.</param>
+    /// <returns>The <see cref="ILoggingBuilder" /> so that additional calls can be chained.</returns>
+    public static ILoggingBuilder AddFile(this ILoggingBuilder builder, Action<FileLoggerOptions> configureOptions, bool clearExistingProviders = false)
+        => AddFileLoggerProvider(builder, configureOptions, clearExistingProviders);
 
+    /// <summary>
+    /// Adds a file logging provider to the <see cref="ILoggingBuilder" />.
+    /// </summary>
+    /// <param name="builder">The <see cref="ILoggingBuilder" /> to add the provider to.</param>
+    /// <param name="configureOptions">The action used to configure the logger.</param>
+    /// <param name="clearExistingProviders">If the existing providers added to the <see cref="ILoggingBuilder" /> should be removed.</param>
+    /// <returns>The <see cref="ILoggingBuilder" /> so that additional calls can be chained.</returns>
+    public static ILoggingBuilder AddFileLoggerProvider(this ILoggingBuilder builder, Action<FileLoggerOptions> configureOptions, bool clearExistingProviders = false)
+    {
+        if (clearExistingProviders)
+        {
+            _ = builder.ClearProviders();
+        }
+
+        _ = builder.Services
+            .Configure(configureOptions)
+            .AddSingleton<ILoggerProvider, FileLoggerProvider>();
+
+        // here in my own original code I would register a "static logger" to use for general
+        // logs in my discord bot to possibly find bugs/issues in my code, but left it out here
+        // as not everyone happens to need said "logger".
         return builder;
     }
 
