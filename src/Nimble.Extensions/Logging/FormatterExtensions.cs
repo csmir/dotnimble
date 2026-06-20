@@ -11,6 +11,11 @@ namespace Nimble.Extensions.Logging;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class FormatterExtensions
 {
+    /// <summary>
+    ///     Resets the log level colors to their default values.
+    /// </summary>
+    /// <param name="options">The <see cref="PrettierFormatterOptions"/> instance to reset.</param>
+    /// <returns>The <see cref="PrettierFormatterOptions"/> instance with reset colors.</returns>
     public static PrettierFormatterOptions ResetColors(this PrettierFormatterOptions options)
     {
         options.LogLevelColors[LogLevel.Trace] = ConsoleColor.Gray;
@@ -23,6 +28,14 @@ public static class FormatterExtensions
         return options;
     }
 
+    /// <summary>
+    ///     Sets the color for a specific log level.
+    /// </summary>
+    /// <param name="options">The <see cref="PrettierFormatterOptions"/> instance to modify.</param>
+    /// <param name="level">The log level to set the color for.</param>
+    /// <param name="color">The color to set for the specified log level.</param>
+    /// <returns>The <see cref="PrettierFormatterOptions"/> instance with the updated color.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"></exception>
     public static PrettierFormatterOptions SetColor(this PrettierFormatterOptions options, LogLevel level, ConsoleColor color)
     {
         if (level < LogLevel.Trace || level > LogLevel.Critical)
@@ -36,9 +49,20 @@ public static class FormatterExtensions
         return options;
     }
 
+    /// <summary>
+    ///     Adds the <see cref="PrettierFormatter"/> to the logging builder with default options.
+    /// </summary>
+    /// <param name="builder">The <see cref="ILoggingBuilder"/> instance to add the formatter to.</param>
+    /// <returns>The <see cref="ILoggingBuilder"/> instance with the formatter added.</returns>
     public static ILoggingBuilder AddPrettierConsole(this ILoggingBuilder builder)
         => AddPrettierConsole(builder, configure: (_) => { });
 
+    /// <summary>
+    ///     Adds the <see cref="PrettierFormatter"/> to the logging builder with custom options.
+    /// </summary>
+    /// <param name="builder">The <see cref="ILoggingBuilder"/> instance to add the formatter to.</param>
+    /// <param name="configure">An action to configure the <see cref="PrettierFormatterOptions"/>.</param>
+    /// <returns>The <see cref="ILoggingBuilder"/> instance with the formatter added.</returns>
     public static ILoggingBuilder AddPrettierConsole(this ILoggingBuilder builder, Action<PrettierFormatterOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
@@ -51,6 +75,12 @@ public static class FormatterExtensions
         return builder;
     }
 
+    /// <summary>
+    ///     Adds a console listener to the logging builder, allowing for reading console input and triggering an action when input is completed.
+    /// </summary>
+    /// <param name="builder">The <see cref="ILoggingBuilder"/> instance to add the console listener to.</param>
+    /// <param name="configure">An action to configure the <see cref="ConsoleListenerOptions"/>.</param>
+    /// <returns>The <see cref="ILoggingBuilder"/> instance with the console listener added.</returns>
     public static ILoggingBuilder AddConsoleListener(this ILoggingBuilder builder, Action<ConsoleListenerOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);

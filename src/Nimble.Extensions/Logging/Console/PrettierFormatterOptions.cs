@@ -10,7 +10,7 @@ public class PrettierFormatterOptions : ConsoleFormatterOptions
 {
     /// <inheritdoc cref="ConsoleFormatterOptions.IncludeScopes" />
     /// <remarks>
-    ///     This property is not supported in prettier console logging.
+    ///     <b>NOTE:</b> This property is not supported in prettier console logging.
     /// </remarks>
     [Obsolete("This property is not supported in prettier console logging.")]
     public new bool IncludeScopes { get; } = false;
@@ -66,4 +66,7 @@ public class PrettierFormatterOptions : ConsoleFormatterOptions
     ///     Default: <see cref="ConsoleColor.DarkYellow"/>.
     /// </remarks>
     public ConsoleColor SpecialCategoryColor { get; set; } = ConsoleColor.DarkYellow;
+
+    // Gets or sets an internal flag that indicates whether the console listener is enabled.
+    internal bool ConsoleListenerEnabled { get; set; }
 }

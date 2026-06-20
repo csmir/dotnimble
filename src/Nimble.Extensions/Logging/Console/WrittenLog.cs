@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using System.ComponentModel;
 
 namespace Nimble.Extensions.Logging.Console;
 
@@ -9,7 +8,7 @@ namespace Nimble.Extensions.Logging.Console;
 /// <param name="Category">The category of the log entry.</param>
 /// <param name="Level">The log level of the log entry.</param>
 /// <param name="LastTimestamp">The timestamp of the last log entry.</param>
-internal record struct WrittenLog(string Category, LogLevel Level, DateTime LastTimestamp)
+public record struct WrittenLog(string Category, LogLevel Level, DateTime LastTimestamp)
 {
     /// <summary>
     ///     Checks whether or not the provided category and log level match this log's category and log level, and whether the last timestamp of this log is within 10 seconds of the current time. 
@@ -17,7 +16,7 @@ internal record struct WrittenLog(string Category, LogLevel Level, DateTime Last
     /// </summary>
     /// <param name="category">The category of the log entry to compare.</param>
     /// <param name="level">The log level of the log entry to compare.</param>
-    /// <returns>True if the log entry is part of the same log; otherwise, false.</returns>
+    /// <returns><see langword="true"/> if the log entry is part of the same log; otherwise, <see langword="false"/>.</returns>
     public readonly bool IsSameLog(string category, LogLevel level) =>
         Category == category && Level == level && (DateTime.Now - LastTimestamp).TotalSeconds < 10;
 }

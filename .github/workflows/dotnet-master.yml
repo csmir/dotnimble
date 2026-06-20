@@ -27,3 +27,4 @@ jobs:
     - name: Publish
       run: |
         dotnet nuget push src/Nimble/bin/Release/*.nupkg -k ${{ secrets.NUGET_TOKEN }} -n -s https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push src/Nimble.Extensions/bin/Release/*.nupkg -k ${{ secrets.NUGET_TOKEN }} -n -s https://api.nuget.org/v3/index.json --skip-duplicate

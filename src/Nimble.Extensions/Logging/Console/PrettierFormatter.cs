@@ -13,7 +13,7 @@ namespace Nimble.Extensions.Logging.Console;
 /// </summary>
 public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
 {
-    private const string LOG_PREFIX = " │   ", LOG_SUFFIX = " ├── ";
+    private const string LOG_PREFIX = " │   ", LOG_SUFFIX = " ├── ", LOG_SUFFIX_STUB = " : ";
 
     private readonly WrittenLogTracker _logTracker;
     private readonly IDisposable? _optionsReloadToken;
@@ -24,6 +24,7 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
     ///     The formatter will listen for changes in the options and reload them when they change, allowing for dynamic updates to the logging behavior without needing to restart the application.
     /// </summary>
     /// <param name="options">The options monitor for <see cref="PrettierFormatterOptions"/>.</param>
+    /// <param name="logTracker">The log tracker, used to track written logs.</param>
     public PrettierFormatter(IOptionsMonitor<PrettierFormatterOptions> options, WrittenLogTracker logTracker)
         : base(nameof(PrettierFormatter))
     {
@@ -84,7 +85,11 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
 
             textWriter.WriteLine(message);
             textWriter.Write($"{LOG_PREFIX}{Environment.NewLine}");
-            textWriter.Write($"{VTSequences.Text.Formatting.ForegroundBrightBlack}CMD: {VTSequences.Text.Formatting.Default}");
+
+            if (_options.ConsoleListenerEnabled)
+                textWriter.Write($"{VTSequences.Text.Formatting.ForegroundBrightBlack}CMD: {VTSequences.Text.Formatting.Default}");
+            else
+                textWriter.Write(LOG_SUFFIX_STUB);
         }
     }
 
@@ -138,6 +143,7 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
     private void ReloadLoggerOptions(PrettierFormatterOptions options)
         => _options = options;
 
+    /// <inheritdoc />
     public void Dispose() 
         => _optionsReloadToken?.Dispose();
 }
