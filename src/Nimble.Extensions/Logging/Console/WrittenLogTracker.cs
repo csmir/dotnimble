@@ -34,6 +34,12 @@ public sealed class WrittenLogTracker
     }
 
     /// <summary>
+    ///     Checks if there is a last written log entry being tracked.
+    /// </summary>
+    /// <returns><see langword="true"/> if there is a last written log entry; otherwise, <see langword="false"/>.</returns>
+    public bool LogIsTracked() => _lastWrittenLog.HasValue;
+
+    /// <summary>
     ///     Resets the last written log entry, clearing the tracking of the last log.
     /// </summary>
     public void Reset() => _lastWrittenLog = null;

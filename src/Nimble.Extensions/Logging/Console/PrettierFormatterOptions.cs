@@ -66,4 +66,7 @@ public class PrettierFormatterOptions : ConsoleFormatterOptions
     ///     Default: <see cref="ConsoleColor.DarkYellow"/>.
     /// </remarks>
     public ConsoleColor SpecialCategoryColor { get; set; } = ConsoleColor.DarkYellow;
+
+    // Gets or sets an internal flag that indicates whether the console listener is enabled.
+    internal bool ConsoleListenerEnabled { get; set; }
 }
