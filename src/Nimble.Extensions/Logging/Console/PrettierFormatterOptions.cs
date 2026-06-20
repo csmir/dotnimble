@@ -10,7 +10,7 @@ public class PrettierFormatterOptions : ConsoleFormatterOptions
 {
     /// <inheritdoc cref="ConsoleFormatterOptions.IncludeScopes" />
     /// <remarks>
-    ///     This property is not supported in prettier console logging.
+    ///     <b>NOTE:</b> This property is not supported in prettier console logging.
     /// </remarks>
     [Obsolete("This property is not supported in prettier console logging.")]
     public new bool IncludeScopes { get; } = false;

@@ -11,7 +11,7 @@
 		<RootNamespace>Nimble</RootNamespace>
 
 		<AssemblyVersion>1.0</AssemblyVersion>
-		<PackageVersion>1.0.0-alpha.6</PackageVersion> <!--\-alpha.1-->
+		<PackageVersion>1.0.0-alpha.7</PackageVersion> <!--\-alpha.1-->
 		<FileVersion>1.0.0.0</FileVersion>
 
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -25,8 +25,8 @@
 		<PackageTags>tooling, console, aot, memory, system</PackageTags>
 		<NeutralLanguage>en-US</NeutralLanguage>
 
-		<PackageProjectUrl>https://github.com/csmir/SharpKit</PackageProjectUrl>
-		<RepositoryUrl>https://github.com/csmir/SharpKit</RepositoryUrl>
+		<PackageProjectUrl>https://github.com/csmir/dotnimble</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/csmir/dotnimble</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 
 		<PackageReadmeFile>README.md</PackageReadmeFile>

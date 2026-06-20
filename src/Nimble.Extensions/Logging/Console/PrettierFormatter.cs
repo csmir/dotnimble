@@ -24,6 +24,7 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
     ///     The formatter will listen for changes in the options and reload them when they change, allowing for dynamic updates to the logging behavior without needing to restart the application.
     /// </summary>
     /// <param name="options">The options monitor for <see cref="PrettierFormatterOptions"/>.</param>
+    /// <param name="logTracker">The tracker for the last written log entry, used to determine if new log entries are part of the same log.</param>
     public PrettierFormatter(IOptionsMonitor<PrettierFormatterOptions> options, WrittenLogTracker logTracker)
         : base(nameof(PrettierFormatter))
     {
@@ -138,6 +139,7 @@ public sealed class PrettierFormatter : ConsoleFormatter, IDisposable
     private void ReloadLoggerOptions(PrettierFormatterOptions options)
         => _options = options;
 
+    /// <inheritdoc />
     public void Dispose() 
         => _optionsReloadToken?.Dispose();
 }

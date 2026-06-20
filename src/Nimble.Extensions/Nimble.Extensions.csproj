@@ -2,9 +2,35 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+		<NoWarn>CA1822;IDE0130;IDE0290;IDE0056;SYSLIB1045</NoWarn>
+	  <IsAotCompatible Condition="'$(TargetFramework)' == 'net10'">true</IsAotCompatible>
+	  <ImplicitUsings>enable</ImplicitUsings>
+	  <Nullable>enable</Nullable>
+	  <LangVersion>preview</LangVersion>
+
+		<AssemblyVersion>1.0</AssemblyVersion>
+		<PackageVersion>1.0.0-alpha.7</PackageVersion>
+		<!--\-alpha.1-->
+		<FileVersion>1.0.0.0</FileVersion>
+		
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+		<PackageId>dotnimble.ex</PackageId>
+
+		<Authors>dotnimble contributors.</Authors>
+		<Title>dotnimble.ex</Title>
+		<Description>Extends, improves and reimplements commonly used Microsoft.Extensions API's.</Description>
+		<PackageTags>tooling, console, aot, memory, system</PackageTags>
+		<NeutralLanguage>en-US</NeutralLanguage>
+
+		<PackageProjectUrl>https://github.com/csmir/dotnimble</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/csmir/dotnimble</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+	</PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
@@ -14,4 +40,15 @@
     <ProjectReference Include="..\Nimble\Nimble.csproj" />
   </ItemGroup>
 
+	<ItemGroup>
+		<None Include="..\..\.editorconfig" />
+		<None Include="..\..\LICENSE">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+		<None Include="..\..\README.md">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+	</ItemGroup>
 </Project>

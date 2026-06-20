@@ -2,6 +2,9 @@
 
 namespace Nimble.Extensions.Logging.Console;
 
+/// <summary>
+///     Represents options for configuring the behavior of the console listener, which listens for user input in the console and allows for custom actions to be performed when input is received.
+/// </summary>
 public sealed class ConsoleListenerOptions
 {
     /// <summary>
