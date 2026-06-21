@@ -88,6 +88,7 @@ public static class FormatterExtensions
         builder.Services.AddOptionsWithValidateOnStart<ConsoleListenerOptions>()
             .Configure(configure);
         builder.Services.AddHostedService<ConsoleListener>();
+        builder.Services.Configure<PrettierFormatterOptions>(configure => configure.ConsoleListenerEnabled = true);
 
         return builder;
     }

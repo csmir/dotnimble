@@ -22,11 +22,17 @@ public sealed class WrittenLogTracker
     /// </summary>
     /// <param name="category">The category of the log entry to compare.</param>
     /// <param name="level">The log level of the log entry to compare.</param>
+    /// <param name="fromEmptyTracker">Indicates whether the log entry is the first log written within the tracker.</param>
     /// <returns><see langword="true"/> if the log entry is part of the same log; otherwise, <see langword="false"/>.</returns>
-    public bool IsCategoricallyEqual(string category, LogLevel level)
+    public bool IsCategoricallyEqual(string category, LogLevel level, out bool fromEmptyTracker)
     {
         if (_lastWrittenLog.HasValue && _lastWrittenLog.Value.IsSameLog(category, level))
+        {
+            fromEmptyTracker = false;
             return true;
+        }
+
+        fromEmptyTracker = !_lastWrittenLog.HasValue;
 
         _lastWrittenLog = new WrittenLog(category, level, DateTime.Now);
 

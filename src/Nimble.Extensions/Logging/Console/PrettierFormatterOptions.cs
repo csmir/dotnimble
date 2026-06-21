@@ -16,12 +16,6 @@ public class PrettierFormatterOptions : ConsoleFormatterOptions
     public new bool IncludeScopes { get; } = false;
 
     /// <summary>
-    ///     Gets or sets the maximum width of log messages before they are wrapped to a new line. 
-    ///     This helps maintain readability in the console by preventing excessively long log entries from stretching across the screen.
-    /// </summary>
-    public int MaxLogWidth { get; set; } = 100;
-
-    /// <summary>
     ///     Gets or sets whether the logger should consider categories starting with this value as special case. If this property is set, the category will be compared against its value using <see cref="string.StartsWith(string)"/>.
     ///     When it matches, the category will be highlighted with a distinct color defined in <see cref="SpecialCategoryColor"/>.
     /// </summary>
