@@ -6,7 +6,7 @@ namespace Nimble.Extensions.DependencyInjection;
 ///     A marker interface used to identify services that can be registered with the dependency injection container.
 /// </summary>
 /// <remarks>
-///     Interface-driven service registration is not enabled by default. Consider calling <see cref="ServiceCollectionExtensions.AddServiceInterfaces"/> to enable automatic registration of services that implement the <see cref="IService"/> interface and its derived interfaces.
+///     Interface-driven service registration is not enabled by default. Consider calling <see cref="ServiceCollectionExtensions.AddServiceInterfaces(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/> to enable automatic registration of services that implement the <see cref="IService"/> interface and its derived interfaces.
 /// </remarks>
 public interface IService { }
 
