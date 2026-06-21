@@ -13,16 +13,12 @@ namespace Nimble.Extensions.Logging;
 public static class FormatterExtensions
 {
     public static PrettierFormatterOptions ResetColors(this PrettierFormatterOptions options)
-    {
-        options.LogLevelColors[LogLevel.Trace] = ConsoleColor.Gray;
-        options.LogLevelColors[LogLevel.Debug] = ConsoleColor.Cyan;
-        options.LogLevelColors[LogLevel.Information] = ConsoleColor.Green;
-        options.LogLevelColors[LogLevel.Warning] = ConsoleColor.Yellow;
-        options.LogLevelColors[LogLevel.Error] = ConsoleColor.Red;
-        options.LogLevelColors[LogLevel.Critical] = ConsoleColor.Magenta;
-
-        return options;
-    }
+        => options.SetColor(LogLevel.Trace, ConsoleColor.Gray)
+        .SetColor(LogLevel.Debug, ConsoleColor.Cyan)
+        .SetColor(LogLevel.Information, ConsoleColor.Green)
+        .SetColor(LogLevel.Warning, ConsoleColor.Yellow)
+        .SetColor(LogLevel.Error, ConsoleColor.Red)
+        .SetColor(LogLevel.Critical, ConsoleColor.Magenta);
 
     public static PrettierFormatterOptions SetColor(this PrettierFormatterOptions options, LogLevel level, ConsoleColor color)
     {
@@ -43,9 +39,9 @@ public static class FormatterExtensions
     public static ILoggingBuilder AddPrettierConsole(this ILoggingBuilder builder, Action<PrettierFormatterOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
-        _ = builder.AddConsoleFormatter<PrettierFormatter, PrettierFormatterOptions>()
+        builder.AddConsoleFormatter<PrettierFormatter, PrettierFormatterOptions>()
             .AddConsole(static (options) => options.FormatterName = nameof(PrettierFormatter));
-        _ = builder.Services.AddSingleton<WrittenLogTracker>()
+        builder.Services.AddSingleton<WrittenLogTracker>()
             .Configure(configure);
         return builder;
     }
@@ -71,10 +67,10 @@ public static class FormatterExtensions
     {
         if (clearExistingProviders)
         {
-            _ = builder.ClearProviders();
+            builder.ClearProviders();
         }
 
-        _ = builder.Services
+        builder.Services
             .Configure(configureOptions)
             .AddSingleton<ILoggerProvider, FileLoggerProvider>();
 
@@ -88,7 +84,8 @@ public static class FormatterExtensions
     {
         ArgumentNullException.ThrowIfNull(configure);
 
-        builder.Services.AddOptionsWithValidateOnStart<ConsoleListenerOptions>()
+        builder.Services
+            .AddOptionsWithValidateOnStart<ConsoleListenerOptions>()
             .Configure(configure);
         builder.Services.AddHostedService<ConsoleListener>();
 

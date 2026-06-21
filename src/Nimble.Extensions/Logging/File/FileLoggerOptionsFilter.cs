@@ -69,7 +69,7 @@ internal struct FileLoggerOptionsFilter
             // If the directory containing the target file name to write to does not exist; create it.
             try
             {
-                _ = Directory.CreateDirectory(namePath);
+                Directory.CreateDirectory(namePath);
             }
             catch
             {

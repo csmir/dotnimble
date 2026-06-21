@@ -34,7 +34,7 @@ public sealed class FileLoggerOptions
         bool captureScopes = true,
         FileLogRollingMethod rollingMethod = FileLogRollingMethod.None)
     {
-        _ = Filters.TryAdd(categoryName, new FileLoggerOptionsFilter
+        Filters.TryAdd(categoryName, new FileLoggerOptionsFilter
         {
             CaptureScopes = captureScopes,
             MinLevel = minLevel,
