@@ -34,7 +34,7 @@ public sealed class FileLoggerOptions
         bool captureScopes = true,
         FileLogRollingMethod rollingMethod = FileLogRollingMethod.None)
     {
-        _ = this.Filters.TryAdd(categoryName, new FileLoggerOptionsFilter
+        _ = Filters.TryAdd(categoryName, new FileLoggerOptionsFilter
         {
             CaptureScopes = captureScopes,
             MinLevel = minLevel,
@@ -52,7 +52,7 @@ public sealed class FileLoggerOptions
 
     internal FileLoggerOptionsFilter? GetFilter(string categoryName)
     {
-        foreach (var filter in this.Filters)
+        foreach (var filter in Filters)
         {
             if (categoryName.StartsWith(filter.Key, StringComparison.Ordinal))
             {
@@ -65,5 +65,5 @@ public sealed class FileLoggerOptions
     }
 
     internal string DebuggerToString()
-        => string.Join(", ", this.Filters.Values.Select(static flof => flof.DebuggerToString()));
+        => string.Join(", ", Filters.Values.Select(static flof => flof.DebuggerToString()));
 }

@@ -11,17 +11,17 @@ internal class FileLoggerProvider : ILoggerProvider, ISupportExternalScope
     private IExternalScopeProvider _scopeProvider = null!;
 
     public FileLoggerProvider(IOptions<FileLoggerOptions> options)
-        => this._options = options;
+        => _options = options;
 
     public ILogger CreateLogger(string name)
-        => this._loggers.GetOrAdd(name, n => new FileLogger(n, this._options));
+        => _loggers.GetOrAdd(name, n => new FileLogger(n, _options));
 
     public void SetScopeProvider(IExternalScopeProvider scopeProvider)
     {
-        this._scopeProvider = scopeProvider;
-        foreach (var logger in this._loggers)
+        _scopeProvider = scopeProvider;
+        foreach (var logger in _loggers)
         {
-            logger.Value.ScopeProvider = this._scopeProvider;
+            logger.Value.ScopeProvider = _scopeProvider;
         }
     }
 

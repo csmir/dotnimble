@@ -18,25 +18,48 @@ internal struct FileLoggerOptionsFilter
 
     private string? OriginalLogFolderName { get; set; }
 
+    private DateOnly? CurrentRollingDate { get; set; }
+
     internal readonly string DebuggerToString()
-        => $"CaptureScopes = {this.CaptureScopes}, {(
-            this.MinLevel != LogLevel.None ? $"MinLevel = {this.MinLevel}" : "Enabled = false")}";
+        => $"CaptureScopes = {CaptureScopes}, {(
+            MinLevel != LogLevel.None ? $"MinLevel = {MinLevel}" : "Enabled = false")}";
 
     internal void CheckFileRolling()
     {
-        this.OriginalLogFolderName ??= Path.GetDirectoryName(this.FilePath) ?? string.Empty;
-        var directoryName = this.OriginalLogFolderName;
-        var fileName = Path.GetFileName(this.FilePath) ?? string.Empty;
-        if (this.RollingMethod is not FileLogRollingMethod.None)
+        OriginalLogFolderName ??= Path.GetDirectoryName(FilePath) ?? string.Empty;
+        var directoryName = OriginalLogFolderName;
+        var fileName = Path.GetFileName(FilePath) ?? string.Empty;
+        if (RollingMethod is not FileLogRollingMethod.None)
         {
+            var currentDate = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            // if null or when the current date is greater than or equal to the current rolling date.
+            if (CurrentRollingDate is null || currentDate >= CurrentRollingDate)
+            {
+                CurrentRollingDate = RollingMethod switch
+                {
+                    FileLogRollingMethod.Daily => currentDate.AddDays(1),
+                    FileLogRollingMethod.Weekly => currentDate.AddDays(7),
+                    FileLogRollingMethod.Monthly => currentDate.AddMonths(1),
+                    FileLogRollingMethod.Yearly => currentDate.AddYears(1),
+                    _ => throw new InvalidOperationException("bug by design.")
+                };
+            }
+
             // This should ideally compare the current date with a private stored date so that way there
             // are no attempts to roll the file early in the case of the Monthly/Yearly file rolling
             // options being used.
-            directoryName = Path.Combine(this.OriginalLogFolderName, DateTime.UtcNow.ToString("yyyy-MM-dd"));
+            directoryName = RollingMethod switch
+            {
+                FileLogRollingMethod.Daily or FileLogRollingMethod.Weekly => Path.Combine(OriginalLogFolderName, currentDate.ToString("yyyy-MM-dd")),
+                FileLogRollingMethod.Monthly => Path.Combine(OriginalLogFolderName, currentDate.ToString("yyyy-MM")),
+                FileLogRollingMethod.Yearly => Path.Combine(OriginalLogFolderName, currentDate.ToString("yyyy")),
+                _ => throw new InvalidOperationException("bug by design.")
+            };
         }
 
         CreateDirectory(directoryName);
-        this.FilePath = Path.Combine(directoryName, fileName);
+        FilePath = Path.Combine(directoryName, fileName);
     }
 
     private static void CreateDirectory(string namePath)

@@ -28,5 +28,5 @@ public enum FileLogRollingMethod
     /// <summary>
     /// File rolling is performed Yearly.
     /// </summary>
-    Yearly = 4,
+    Yearly = 4
 }

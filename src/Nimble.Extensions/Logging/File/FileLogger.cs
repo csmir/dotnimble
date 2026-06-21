@@ -11,7 +11,7 @@ internal class FileLogger : ILogger
 
     public FileLogger(string categoryName, IOptions<FileLoggerOptions> options)
     {
-        this._options = options;
+        _options = options;
         this.categoryName = categoryName;
 
         // Create the log folder, this optionally includes the datestamped rolling
@@ -23,14 +23,14 @@ internal class FileLogger : ILogger
 
     public bool IsEnabled(LogLevel logLevel)
     {
-        var filter = this._options.Value.GetFilter(this.categoryName);
+        var filter = _options.Value.GetFilter(categoryName);
         return filter != null && logLevel >= filter.Value.MinLevel;
     }
 
     public void Log<TState>(LogLevel logLevel, EventId eventId,
         TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {
-        if (!this.IsEnabled(logLevel))
+        if (!IsEnabled(logLevel))
         {
             return;
         }
@@ -41,8 +41,8 @@ internal class FileLogger : ILogger
             {
                 // We know for sure that if IsEnabled returns true, then filter is not null,
                 // but we need to get the filter again to get the file path.
-                var filter = this._options.Value.GetFilter(this.categoryName);
-                var message = $"[{this.categoryName}] {logLevel}: {DateTime.UtcNow} {formatter(state, exception)}{Environment.NewLine}";
+                var filter = _options.Value.GetFilter(categoryName);
+                var message = $"[{categoryName}] {logLevel}: {DateTime.UtcNow} {formatter(state, exception)}{Environment.NewLine}";
 
                 // if file rolling is enabled this will update the file path in the filter to the new log file.
                 filter!.Value.CheckFileRolling();
@@ -59,5 +59,5 @@ internal class FileLogger : ILogger
     }
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
-        => this.ScopeProvider?.Push(state);
+        => ScopeProvider?.Push(state);
 }

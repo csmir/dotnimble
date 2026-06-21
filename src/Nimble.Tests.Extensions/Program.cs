@@ -7,13 +7,13 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Logging
     .SetMinimumLevel(LogLevel.Trace)
-    .AddPrettierConsole(configure =>
+    .AddPrettierConsole(static configure =>
     {
         configure.MaxLogWidth = 120;
         configure.TimestampColor = ConsoleColor.DarkCyan;
         configure.SpecialCategoryPrefix = "Nimble";
     })
-    .AddConsoleListener(configure =>
+    .AddConsoleListener(static configure =>
     {
         configure.CreateScopes = true;
         configure.OnReadlineCompleted = HandleCommand;
