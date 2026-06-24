@@ -75,6 +75,9 @@ public sealed partial class PrettierFormatter
                 .Append(ANSI.NoUnderline)
                 .AppendLine(ANSI.Default);
 
+            if (string.IsNullOrEmpty(frame.File))
+                continue;
+
             AppendHead(ref stringBuilder);
 
             stringBuilder
