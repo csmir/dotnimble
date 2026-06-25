@@ -604,7 +604,6 @@ public ref struct ValueStringBuilder : IDisposable
             while (enumerator.MoveNext()) Append(separator).Append(enumerator.Current);
         }
 
-
         return ref this;
     }
 
