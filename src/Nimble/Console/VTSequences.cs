@@ -1,16 +1,18 @@
-﻿using System.Runtime.Versioning;
+﻿#if NET6_0_OR_GREATER
+using System.Runtime.Versioning;
+#endif
 
 namespace Nimble.Console;
 
 /// <summary>
 ///     Provides Virtual Terminal sequences as defined by the VT100 standard.
 /// </summary>
-public static class VTSequences
+public static partial class VTSequences
 {
     /// <summary>
     ///     Commands in this section are responsible for the console's buffer, and modifying its attributes.
     /// </summary>
-    public static class Buffer
+    public static partial class Buffer
     {
         /// <summary>
         ///     <c>DECSTBM</c> - Sets the VT scrolling margins of the viewport.
@@ -71,7 +73,7 @@ public static class VTSequences
     /// <summary>
     ///     Commands in this section are responsible for the console's cursor, and its various operations.
     /// </summary>
-    public static class Cursor
+    public static partial class Cursor
     {
         /// <summary>
         ///     Contains commands for controlling the cursor's position, within the current viewport.
@@ -94,7 +96,7 @@ public static class VTSequences
         ///     </list>
         ///     Cursor movement is bounded by the buffer's current viewport. Scrolling (if available) will not occur.
         /// </remarks>
-        public static class Positioning
+        public static partial class Positioning
         {
             /// <summary>
             ///     <c>DECXCPR</c> - Emits the cursor position as <c>"\e[{0};{1}R"</c> Where parameter <c>{0}</c> is the current row, and <c>{1}</c> is the current column.
@@ -205,38 +207,9 @@ public static class VTSequences
         }
 
         /// <summary>
-        ///     Contains commands for controlling the cursor's visibility, and its blinking state.
-        /// </summary>
-        /// <remarks>
-        ///     Enable sequences end in <c>h</c>, and the disable in <c>l</c>, representing high and low respectively.
-        /// </remarks>
-        public static class Visibility
-        {
-            /// <summary>
-            ///     <c>ATT160</c> - Start blinking the cursor.
-            /// </summary>
-            public const string EnableBlinking = "\e[?12h";
-
-            /// <summary>
-            ///     <c>ATT160</c> - Stop blinking the cursor.
-            /// </summary>
-            public const string DisableBlinking = "\e[?12l";
-
-            /// <summary>
-            ///     <c>DECTCEM</c> - Show the cursor. Equivalent to setting <see cref="System.Console.CursorVisible"/> to <see langword="true"/>.
-            /// </summary>
-            public const string SetModeShow = "\e[?25h";
-
-            /// <summary>
-            ///     <c>DECTCEM</c> - Hide the cursor. Equivalent to setting <see cref="System.Console.CursorVisible"/> to <see langword="false"/>.
-            /// </summary>
-            public const string SetModeHide = "\e[?12l";
-        }
-
-        /// <summary>
         ///     Contains commands for controlling the cursor's shape.
         /// </summary>
-        public static class Shape
+        public static partial class Shape
         {
             /// <summary>
             ///     <c>DECSCUSR</c> - Default cursor shape configured by the user.
@@ -274,6 +247,35 @@ public static class VTSequences
             public const string SteadyBar = "\e[6 q";
 
         }
+
+        /// <summary>
+        ///     Contains commands for controlling the cursor's visibility, and its blinking state.
+        /// </summary>
+        /// <remarks>
+        ///     Enable sequences end in <c>h</c>, and the disable in <c>l</c>, representing high and low respectively.
+        /// </remarks>
+        public static partial class Visibility
+        {
+            /// <summary>
+            ///     <c>ATT160</c> - Start blinking the cursor.
+            /// </summary>
+            public const string EnableBlinking = "\e[?12h";
+
+            /// <summary>
+            ///     <c>ATT160</c> - Stop blinking the cursor.
+            /// </summary>
+            public const string DisableBlinking = "\e[?12l";
+
+            /// <summary>
+            ///     <c>DECTCEM</c> - Show the cursor. Equivalent to setting <see cref="System.Console.CursorVisible"/> to <see langword="true"/>.
+            /// </summary>
+            public const string SetModeShow = "\e[?25h";
+
+            /// <summary>
+            ///     <c>DECTCEM</c> - Hide the cursor. Equivalent to setting <see cref="System.Console.CursorVisible"/> to <see langword="false"/>.
+            /// </summary>
+            public const string SetModeHide = "\e[?12l";
+        }
     }
 
     /// <summary>
@@ -282,7 +284,7 @@ public static class VTSequences
     /// <remarks>
     ///     Each of these modes are simple boolean settings. The Cursor keys' mode is either Normal (default) or Application, and the Keypad keys' mode is either Numeric (default) or Application.
     /// </remarks>
-    public static class Input
+    public static partial class Input
     {
         /// <summary>
         ///     <c>DECKPAM</c> - Keypad keys will emit their application mode sequences.
@@ -324,7 +326,7 @@ public static class VTSequences
     ///     While legacy consoles traditionally expect eight-wide tabs, *nix applications can manipulate tab stops' locations, to optimize cursor movement.
     ///     The sequences contained allow an application to set, remove, and navigate the tab stop locations within the console windowhem.
     /// </remarks>
-    public static class Tabs
+    public static partial class Tabs
     {
         /// <summary>
         ///     <c>HTS</c> - Sets a tab stop on the cursor's current column.
@@ -390,110 +392,8 @@ public static class VTSequences
     /// <summary>
     /// Commands in this section are responsible for text within the console, and various manipulations of it.
     /// </summary>
-    public static class Text
+    public static partial class Text
     {
-        /// <summary>
-        ///     Contains commands for modifying the text buffer's contents.
-        /// </summary>
-        /// <remarks>
-        ///     For each sequence, the default value for <c>{0}</c> if it is omitted is 0.
-        /// </remarks>
-        public static class Modification
-        {
-            /// <summary>
-            ///     <c>ICH</c> - Inserts <c>{0}</c> spaces at the current cursor position, shifting all existing text to the right. Text exiting the screen to the right is removed.
-            /// </summary>
-            public const string InsertCharacter = "\e[{0}@";
-
-            /// <summary>
-            ///     <c>DCH</c> - Deletes <c>{0}</c> characters at the current cursor position, shifting all existing text to the left. Space characters are inserted from the right edge of the screen.
-            /// </summary>
-            public const string DeleteCharacter = "\e[{0}P";
-
-            /// <summary>
-            ///     <c>ECH</c> - Erases <c>{0}</c> characters from the current cursor position, overwriting them with space characters.
-            /// </summary>
-            public const string EraseCharacter = "\e[{0}X";
-
-            /// <summary>
-            ///     <c>IL</c> - Inserts <c>{0}</c> lines into the text buffer at the cursor's position, shifting down the line the cursor is on, and all lines below it.
-            /// </summary>
-            /// <remarks>
-            ///     Only the lines in the current scrolling margins are affected. The following rules apply unless otherwise noted:
-            ///     <list type="bullet">
-            ///         <item>
-            ///             If no margins are set, the default margin borders are the current viewport.
-            ///         </item>
-            ///         <item>
-            ///             If a line were to be shifted below the margins, it is discarded entirely.
-            ///         </item>
-            ///         <item>
-            ///             If a line is deleted, a blank line is inserted at the bottom of the margins.
-            ///         </item>
-            ///     </list>
-            ///     Lines outside the current margins are never affected.
-            /// </remarks>
-            public const string InsertLine = "\e[{0}L";
-
-            /// <summary>
-            ///     <c>DL</c> - Deletes <c>{0}</c> lines from the text buffer, starting with the row the cursor is on.
-            /// </summary>
-            /// <remarks>
-            ///     Only the lines in the current scrolling margins are affected. The following rules apply unless otherwise noted:
-            ///     <list type="bullet">
-            ///         <item>
-            ///             If no margins are set, the default margin borders are the current viewport.
-            ///         </item>
-            ///         <item>
-            ///             If a line were to be shifted below the margins, it is discarded entirely.
-            ///         </item>
-            ///         <item>
-            ///             If a line is deleted, a blank line is inserted at the bottom of the margins.
-            ///         </item>
-            ///     </list>
-            ///     Lines outside the current margins are never affected.
-            /// </remarks>
-            public const string DeleteLine = "\e[{0}M";
-
-            /// <summary>
-            ///     <c>ED</c> - Replace all text in the current viewport/screen with space characters, within the bounds specified by <c>{0}</c>.
-            /// </summary>
-            /// <remarks>
-            ///     The parameter <c>{0}</c> has 3 valid values:
-            ///     <list type="bullet">
-            ///         <item>
-            ///             <c>0</c> erases from the current cursor position (inclusive), to the end of the line/display.
-            ///         </item>
-            ///         <item>
-            ///             <c>1</c> erases from the beginning of the line/display, up to and including, the current cursor position
-            ///         </item>
-            ///         <item>
-            ///             <c>2</c> erases the entire line/display.
-            ///         </item>
-            ///     </list>
-            /// </remarks>
-            public const string EraseInDisplay = "\e[{0}J";
-
-            /// <summary>
-            ///     <c>EL</c> - Replace all text on the cursor's current line with with space characters, within the bounds specified by <c>{0}</c>.
-            /// </summary>
-            /// <remarks>
-            ///     The parameter <c>{0}</c> has 3 valid values:
-            ///     <list type="bullet">
-            ///         <item>
-            ///             <c>0</c> erases from the current cursor position (inclusive), to the end of the line/display.
-            ///         </item>
-            ///         <item>
-            ///             <c>1</c> erases from the beginning of the line/display, up to and including, the current cursor position
-            ///         </item>
-            ///         <item>
-            ///             <c>2</c> erases the entire line/display.
-            ///         </item>
-            ///     </list>
-            /// </remarks>
-            public const string EraseInLine = "\e[{0}K";
-        }
-
         /// <summary>
         ///     Contains commands for adjusting the format of all future writes to the console's text buffer.
         /// </summary>
@@ -501,7 +401,7 @@ public static class VTSequences
         ///     Some virtual terminal emulators support a palette of colors greater than the 16 colors provided by legacy implementations.
         ///     For these extended colors, consoles without support (such as the legacy Windows console) will approximate the nearest color from their table.
         /// </remarks>
-        public static class Formatting
+        public static partial class Formatting
         {
             /// <summary>
             ///     <c>SGR</c> - Set the format of the screen and text, as specified by <c>{0}</c>.
@@ -761,62 +661,108 @@ public static class VTSequences
             ///     Additionally, it must end with the terminator sequence <c>"\e\x5C"</c>. <c>"\x7"</c> may be used instead, but the longer form is preferred.
             /// </remarks>
             public const string ModifyScreenColor = "\e]4;{0};{1}/{2}/{3}\e\x5C";
+        }
+
+        /// <summary>
+        ///     Contains commands for modifying the text buffer's contents.
+        /// </summary>
+        /// <remarks>
+        ///     For each sequence, the default value for <c>{0}</c> if it is omitted is 0.
+        /// </remarks>
+        public static partial class Modification
+        {
+            /// <summary>
+            ///     <c>ICH</c> - Inserts <c>{0}</c> spaces at the current cursor position, shifting all existing text to the right. Text exiting the screen to the right is removed.
+            /// </summary>
+            public const string InsertCharacter = "\e[{0}@";
 
             /// <summary>
-            ///     Converts a <see cref="ConsoleColor"/> to its corresponding ANSI color code sequence. The <paramref name="isBackground"/> parameter controls whether the returned sequence is for the foreground or background color.
+            ///     <c>DCH</c> - Deletes <c>{0}</c> characters at the current cursor position, shifting all existing text to the left. Space characters are inserted from the right edge of the screen.
             /// </summary>
-            /// <param name="color">The <see cref="ConsoleColor"/> to convert.</param>
-            /// <param name="isBackground">Indicates whether the color is for the background.</param>
-            /// <returns>The ANSI color code sequence.</returns>
-            /// <exception cref="ArgumentOutOfRangeException">Thrown when the <paramref name="color"/> is not a valid <see cref="ConsoleColor"/> value.</exception>
-            public static string FromConsoleColor(ConsoleColor color, bool isBackground = false)
-            {
-                if (color < ConsoleColor.Black || color > ConsoleColor.White)
-                    throw new ArgumentOutOfRangeException(nameof(color), $"Invalid console color: {color}");
+            public const string DeleteCharacter = "\e[{0}P";
 
-                if (isBackground)
-#pragma warning disable CS8524 // The switch expression does not handle some values of its input type (it is not exhaustive) involving an unnamed enum value.
-                    return color switch
-                    {
-                        ConsoleColor.Black => BackgroundBlack,
-                        ConsoleColor.DarkRed => BackgroundRed,
-                        ConsoleColor.DarkGreen => BackgroundGreen,
-                        ConsoleColor.DarkYellow => BackgroundYellow,
-                        ConsoleColor.DarkBlue => BackgroundBlue,
-                        ConsoleColor.DarkMagenta => BackgroundMagenta,
-                        ConsoleColor.DarkCyan => BackgroundCyan,
-                        ConsoleColor.Gray => BackgroundWhite,
-                        ConsoleColor.DarkGray => BackgroundBrightBlack,
-                        ConsoleColor.Red => BackgroundBrightRed,
-                        ConsoleColor.Green => BackgroundBrightGreen,
-                        ConsoleColor.Yellow => BackgroundBrightYellow,
-                        ConsoleColor.Blue => BackgroundBrightBlue,
-                        ConsoleColor.Magenta => BackgroundBrightMagenta,
-                        ConsoleColor.Cyan => BackgroundBrightCyan,
-                        ConsoleColor.White => BackgroundBrightWhite
-                    };
-                else
-                    return color switch
-                    {
-                        ConsoleColor.Black => ForegroundBlack,
-                        ConsoleColor.DarkRed => ForegroundRed,
-                        ConsoleColor.DarkGreen => ForegroundGreen,
-                        ConsoleColor.DarkYellow => ForegroundYellow,
-                        ConsoleColor.DarkBlue => ForegroundBlue,
-                        ConsoleColor.DarkMagenta => ForegroundMagenta,
-                        ConsoleColor.DarkCyan => ForegroundCyan,
-                        ConsoleColor.Gray => ForegroundWhite,
-                        ConsoleColor.DarkGray => ForegroundBrightBlack,
-                        ConsoleColor.Red => ForegroundBrightRed,
-                        ConsoleColor.Green => ForegroundBrightGreen,
-                        ConsoleColor.Yellow => ForegroundBrightYellow,
-                        ConsoleColor.Blue => ForegroundBrightBlue,
-                        ConsoleColor.Magenta => ForegroundBrightMagenta,
-                        ConsoleColor.Cyan => ForegroundBrightCyan,
-                        ConsoleColor.White => ForegroundBrightWhite
-                    };
-#pragma warning restore CS8524 // The switch expression does not handle some values of its input type (it is not exhaustive) involving an unnamed enum value.
-            }
+            /// <summary>
+            ///     <c>ECH</c> - Erases <c>{0}</c> characters from the current cursor position, overwriting them with space characters.
+            /// </summary>
+            public const string EraseCharacter = "\e[{0}X";
+
+            /// <summary>
+            ///     <c>IL</c> - Inserts <c>{0}</c> lines into the text buffer at the cursor's position, shifting down the line the cursor is on, and all lines below it.
+            /// </summary>
+            /// <remarks>
+            ///     Only the lines in the current scrolling margins are affected. The following rules apply unless otherwise noted:
+            ///     <list type="bullet">
+            ///         <item>
+            ///             If no margins are set, the default margin borders are the current viewport.
+            ///         </item>
+            ///         <item>
+            ///             If a line were to be shifted below the margins, it is discarded entirely.
+            ///         </item>
+            ///         <item>
+            ///             If a line is deleted, a blank line is inserted at the bottom of the margins.
+            ///         </item>
+            ///     </list>
+            ///     Lines outside the current margins are never affected.
+            /// </remarks>
+            public const string InsertLine = "\e[{0}L";
+
+            /// <summary>
+            ///     <c>DL</c> - Deletes <c>{0}</c> lines from the text buffer, starting with the row the cursor is on.
+            /// </summary>
+            /// <remarks>
+            ///     Only the lines in the current scrolling margins are affected. The following rules apply unless otherwise noted:
+            ///     <list type="bullet">
+            ///         <item>
+            ///             If no margins are set, the default margin borders are the current viewport.
+            ///         </item>
+            ///         <item>
+            ///             If a line were to be shifted below the margins, it is discarded entirely.
+            ///         </item>
+            ///         <item>
+            ///             If a line is deleted, a blank line is inserted at the bottom of the margins.
+            ///         </item>
+            ///     </list>
+            ///     Lines outside the current margins are never affected.
+            /// </remarks>
+            public const string DeleteLine = "\e[{0}M";
+
+            /// <summary>
+            ///     <c>ED</c> - Replace all text in the current viewport/screen with space characters, within the bounds specified by <c>{0}</c>.
+            /// </summary>
+            /// <remarks>
+            ///     The parameter <c>{0}</c> has 3 valid values:
+            ///     <list type="bullet">
+            ///         <item>
+            ///             <c>0</c> erases from the current cursor position (inclusive), to the end of the line/display.
+            ///         </item>
+            ///         <item>
+            ///             <c>1</c> erases from the beginning of the line/display, up to and including, the current cursor position
+            ///         </item>
+            ///         <item>
+            ///             <c>2</c> erases the entire line/display.
+            ///         </item>
+            ///     </list>
+            /// </remarks>
+            public const string EraseInDisplay = "\e[{0}J";
+
+            /// <summary>
+            ///     <c>EL</c> - Replace all text on the cursor's current line with with space characters, within the bounds specified by <c>{0}</c>.
+            /// </summary>
+            /// <remarks>
+            ///     The parameter <c>{0}</c> has 3 valid values:
+            ///     <list type="bullet">
+            ///         <item>
+            ///             <c>0</c> erases from the current cursor position (inclusive), to the end of the line/display.
+            ///         </item>
+            ///         <item>
+            ///             <c>1</c> erases from the beginning of the line/display, up to and including, the current cursor position
+            ///         </item>
+            ///         <item>
+            ///             <c>2</c> erases the entire line/display.
+            ///         </item>
+            ///     </list>
+            /// </remarks>
+            public const string EraseInLine = "\e[{0}K";
         }
     }
 
@@ -829,7 +775,7 @@ public static class VTSequences
     ///     Lines outside the scrolling margins will not be affected.<br/><br/>
     ///     For each sequence, the default value for <c>{0}</c> if it is omitted is 1.
     /// </remarks>
-    public static class Viewport
+    public static partial class Viewport
     {
         /// <summary>
         ///     <c>SU</c> - Scrolls the console's contents <c>{0}</c> columns up.
@@ -851,7 +797,7 @@ public static class VTSequences
     /// <summary>
     /// Commands in this section are responsible for the console's window, and output controls.
     /// </summary>
-    public static class Window
+    public static partial class Window
     {
         /// <summary>
         ///     Sets both the console window's title, and its tab information, to the string passed in <c>{0}</c>.
