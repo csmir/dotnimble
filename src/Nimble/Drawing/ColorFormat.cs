@@ -1,9 +1,9 @@
 ﻿namespace Nimble.Drawing;
 
 /// <summary>
-///     Represents all color formats supported by Coloris.
+///     Represents all supported <see cref="Composite"/> color formats.
 /// </summary>
-public enum CompositeFormat
+public enum ColorFormat
 {
     /// <summary>
     ///     sRGB format, standardized default web and UI color space. 

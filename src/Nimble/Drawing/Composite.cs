@@ -836,63 +836,63 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     /// </summary>
     /// <returns>A string representing web-format sRGB (A) color space.</returns>
     public override string ToString()
-        => ToString(CompositeFormat.RGBA);
+        => ToString(ColorFormat.RGBA);
 
     /// <summary>
     ///     Gets a web-format string representation of the current value in the chosen format.
     /// </summary>
     /// <param name="format">The target format for the current value.</param>
     /// <returns>A string representing web-format of the current value.</returns>
-    /// <exception cref="ArgumentException">Thrown when the provided format is not a named value of <see cref="CompositeFormat"/>.</exception>
-    public string ToString(CompositeFormat format)
+    /// <exception cref="ArgumentException">Thrown when the provided format is not a named value of <see cref="ColorFormat"/>.</exception>
+    public string ToString(ColorFormat format)
     {
         switch (format)
         {
-            case CompositeFormat.RGB:
+            case ColorFormat.RGB:
                 return $"rgb({R}, {G}, {B})";
-            case CompositeFormat.RGBA:
+            case ColorFormat.RGBA:
                 return $"rgba({R}, {G}, {B}, {A})";
-            case CompositeFormat.HSL:
+            case ColorFormat.HSL:
                 {
                     var (h, s, l) = GetHSL();
 
                     return $"hsl({h}, {s}, {l})";
                 }
-            case CompositeFormat.HSLA:
+            case ColorFormat.HSLA:
                 {
                     var (h, s, l, a) = GetHSLA();
 
                     return $"hsla({h}, {s}, {l}, {a}";
                 }
-            case CompositeFormat.HSV:
+            case ColorFormat.HSV:
                 {
                     var (h, s, v) = GetHSV();
 
                     return $"hsv({h}, {s}, {v})";
                 }
-            case CompositeFormat.CIEXYZ:
+            case ColorFormat.CIEXYZ:
                 {
                     var (x, y, z) = GetXYZ();
 
                     return $"xyz({x}, {y}, {z})";
                 }
-            case CompositeFormat.CIELAB:
+            case ColorFormat.CIELAB:
                 {
                     var (l, a, b) = GetCIELAB();
 
                     return $"cielab({l}, {a}, {b})";
                 }
-            case CompositeFormat.OKLAB:
+            case ColorFormat.OKLAB:
                 {
                     var (l, a, b) = GetOKLAB();
                     return $"oklab({l}, {a}, {b})";
                 }
-                case CompositeFormat.OKLCH:
+                case ColorFormat.OKLCH:
                 {
                     var (l, c, h) = GetOKLCH();
                     return $"oklch({l}, {c}, {h})";
                 }
-            case CompositeFormat.HEX:
+            case ColorFormat.HEX:
                 {
                     return $"#{GetOrderedRGBA():X8}";
                 }

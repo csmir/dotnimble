@@ -103,7 +103,7 @@ public sealed partial class PrettierFormatter
             : logTime.ToString(_options.TimestampFormat);
 
         stringBuilder
-            .Append(ANSI.FromConsoleColor(_options.TimestampColor))
+            .Append(ANSI.FromConsoleColor(_options.TimestampColor, false))
             .Append(timeStamp)
             .Append(ANSI.Default)
             .Append(' ');
@@ -112,7 +112,7 @@ public sealed partial class PrettierFormatter
     private void AppendCategory(ref ValueStringBuilder stringBuilder, string category)
     {
         var categoryColor = !string.IsNullOrEmpty(_options.SpecialCategoryPrefix) && category.StartsWith(_options.SpecialCategoryPrefix, StringComparison.Ordinal)
-            ? ANSI.FromConsoleColor(_options.SpecialCategoryColor)
+            ? ANSI.FromConsoleColor(_options.SpecialCategoryColor, false)
             : ANSI.ForegroundBrightBlack;
 
         stringBuilder
@@ -144,7 +144,7 @@ public sealed partial class PrettierFormatter
             stringBuilder.AppendLine(LOG_PREFIX);
 
         stringBuilder
-            .Append(ANSI.FromConsoleColor(color))
+            .Append(ANSI.FromConsoleColor(color, false))
             .Append(GetLevelPhrase(lvl))
             .Append(':')
             .Append(ANSI.Default)
