@@ -1,6 +1,10 @@
-﻿using Nimble.Collections.Generic;
-using System.ComponentModel;
+﻿using System.ComponentModel;
+
+#if NET6_0_OR_GREATER
+using Nimble.Collections.Generic;
+#else
 using System.Runtime.InteropServices;
+#endif
 
 namespace System;
 
@@ -165,10 +169,9 @@ public static class ArrayExtensions
         }
 
         #region Multidimension LINQ
-        #pragma warning disable CS8500
 
         /// <inheritdoc cref="Enumerable.All{TSource}(IEnumerable{TSource}, Func{TSource, bool})"/>
-        public unsafe bool MxAll<T>(Func<T, bool> predicate)
+        public bool MxAll<T>(Func<T, bool> predicate)
         {
             if (array is T[] flat) return flat.All(predicate);
 
@@ -177,14 +180,17 @@ public static class ArrayExtensions
 #if NET6_0_OR_GREATER
                 foreach (T item in (ValueArray<T>)array) if (!predicate(item)) return false;
 #else
-                GCHandle handle = GCHandle.Alloc(array, GCHandleType.Pinned);
-                try
+                unsafe
                 {
-                    int length = array.Length;
-                    T* basePtr = (T*)handle.AddrOfPinnedObject();
-                    for (int i = 0; i < length; i++) if (!predicate(basePtr[i])) return false;
+                    GCHandle handle = GCHandle.Alloc(array, GCHandleType.Pinned);
+                    try
+                    {
+                        int length = array.Length;
+                        T* basePtr = (T*)handle.AddrOfPinnedObject();
+                        for (int i = 0; i < length; i++) if (!predicate(basePtr[i])) return false;
+                    }
+                    finally { handle.Free(); }
                 }
-                finally { handle.Free(); }
 #endif
             }
 
@@ -197,7 +203,7 @@ public static class ArrayExtensions
         public bool MxAny() => array.Length != 0;
 
         /// <inheritdoc cref="Enumerable.Any{TSource}(IEnumerable{TSource}, Func{TSource, bool})"/>
-        public unsafe bool MxAny<T>(Func<T, bool> predicate)
+        public bool MxAny<T>(Func<T, bool> predicate)
         {
             if (array is T[] flat) return flat.Any(predicate);
 
@@ -206,14 +212,17 @@ public static class ArrayExtensions
 #if NET6_0_OR_GREATER
                 foreach (T item in (ValueArray<T>)array) if (predicate(item)) return true;
 #else
-                GCHandle handle = GCHandle.Alloc(array, GCHandleType.Pinned);
-                try
+                unsafe
                 {
-                    int length = array.Length;
-                    T* basePtr = (T*)handle.AddrOfPinnedObject();
-                    for (int i = 0; i < length; i++) if (predicate(basePtr[i])) return true;
+                    GCHandle handle = GCHandle.Alloc(array, GCHandleType.Pinned);
+                    try
+                    {
+                        int length = array.Length;
+                        T* basePtr = (T*)handle.AddrOfPinnedObject();
+                        for (int i = 0; i < length; i++) if (predicate(basePtr[i])) return true;
+                    }
+                    finally { handle.Free(); }
                 }
-                finally { handle.Free(); }
 #endif
             }
 
@@ -229,7 +238,7 @@ public static class ArrayExtensions
         public long MxCount() => array.LongLength;
 
         /// <inheritdoc cref="Enumerable.Count{TSource}(IEnumerable{TSource}, Func{TSource, bool})"/>
-        public unsafe int MxCount<T>(Func<T, bool> predicate)
+        public int MxCount<T>(Func<T, bool> predicate)
         {
             if (array is T[] flat) return flat.Count(predicate);
 
@@ -239,14 +248,17 @@ public static class ArrayExtensions
 #if NET6_0_OR_GREATER
                 foreach (T item in (ValueArray<T>)array) if (predicate(item)) count++;
 #else
-                GCHandle handle = GCHandle.Alloc(array, GCHandleType.Pinned);
-                try
+                unsafe
                 {
-                    int length = array.Length;
-                    T* basePtr = (T*)handle.AddrOfPinnedObject();
-                    for (int i = 0; i < length; i++) if (predicate(basePtr[i])) count++;
+                    GCHandle handle = GCHandle.Alloc(array, GCHandleType.Pinned);
+                    try
+                    {
+                        int length = array.Length;
+                        T* basePtr = (T*)handle.AddrOfPinnedObject();
+                        for (int i = 0; i < length; i++) if (predicate(basePtr[i])) count++;
+                    }
+                    finally { handle.Free(); }
                 }
-                finally { handle.Free(); }
 #endif
             }
 
@@ -255,7 +267,6 @@ public static class ArrayExtensions
             return count;
         }
 
-        #pragma warning restore CS8500
         #endregion
     }
 }

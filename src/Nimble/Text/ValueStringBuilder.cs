@@ -604,7 +604,6 @@ public ref struct ValueStringBuilder : IDisposable
             while (enumerator.MoveNext()) Append(separator).Append(enumerator.Current);
         }
 
-
         return ref this;
     }
 
@@ -1096,7 +1095,10 @@ public ref struct ValueStringBuilder : IDisposable
 
     #region Interpolated String Handling
 
-#pragma warning disable IDE0060
+    #pragma warning disable IDE0060
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
+    private static void Copy(ref Vsb source, ref Vsb dest) => dest = source;
 
     /// <summary>
     ///     Appends the specified interpolated string to this instance.
@@ -1104,7 +1106,12 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="handler"> The interpolated string to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Append([InterpolatedStringHandlerArgument("")] ref AppendInterpolatedStringHandler handler) => ref this;
+    public ref Vsb Append([InterpolatedStringHandlerArgument("")] ref AppendInterpolatedStringHandler handler)
+    {
+        Copy(ref handler._stringBuilder, ref this);
+
+        return ref this;
+    }
 
     /// <summary>
     ///     Appends the specified interpolated string to this instance.
@@ -1113,7 +1120,12 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="handler"> The interpolated string to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Append(IFormatProvider? provider, [InterpolatedStringHandlerArgument("", nameof(provider))] ref AppendInterpolatedStringHandler handler) => ref this;
+    public ref Vsb Append(IFormatProvider? provider, [InterpolatedStringHandlerArgument("", nameof(provider))] ref AppendInterpolatedStringHandler handler)
+    {
+        Copy(ref handler._stringBuilder, ref this);
+
+        return ref this;
+    }
 
     /// <summary>
     ///     Appends the specified interpolated string followed by the default line terminator to the end of the current <see cref="Vsb"/>.
@@ -1121,7 +1133,12 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="handler"> The interpolated string to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendLine([InterpolatedStringHandlerArgument("")] ref AppendInterpolatedStringHandler handler) => ref AppendLine();
+    public ref Vsb AppendLine([InterpolatedStringHandlerArgument("")] ref AppendInterpolatedStringHandler handler)
+    {
+        Copy(ref handler._stringBuilder, ref this);
+
+        return ref AppendLine();
+    }
 
     /// <summary>
     ///     Appends the specified interpolated string using the specified format, followed by the default line terminator, to the end of the current <see cref="Vsb"/>.
@@ -1130,7 +1147,12 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="handler"> The interpolated string to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendLine(IFormatProvider? provider, [InterpolatedStringHandlerArgument("", nameof(provider))] ref AppendInterpolatedStringHandler handler) => ref AppendLine();
+    public ref Vsb AppendLine(IFormatProvider? provider, [InterpolatedStringHandlerArgument("", nameof(provider))] ref AppendInterpolatedStringHandler handler)
+    {
+        Copy(ref handler._stringBuilder, ref this);
+
+        return ref AppendLine();
+    }
 
     #pragma warning restore IDE0060
 
@@ -1159,7 +1181,7 @@ public ref struct ValueStringBuilder : IDisposable
         /// <summary>
         ///     The associated builder to append strings to.
         /// </summary>
-        private Vsb _stringBuilder;
+        internal Vsb _stringBuilder;
 
         /// <summary>
         ///     Optional provider to pass to <see cref="IFormattable.ToString"/> or <see cref="ISpanFormattable.TryFormat"/> calls.

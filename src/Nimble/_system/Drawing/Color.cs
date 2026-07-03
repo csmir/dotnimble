@@ -1,10 +1,12 @@
-﻿using Nimble.Drawing;
+﻿using System.ComponentModel;
+using Nimble.Drawing;
 
 namespace System.Drawing;
 
 /// <summary>
 ///     Provides extension methods for <see cref="Color"/>.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class ColorExtensions
 {
     extension(Color color)
