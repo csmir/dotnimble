@@ -216,9 +216,9 @@ public ref struct ValueStringBuilder : IDisposable
 
     #region Internal Helpers
 
-    private readonly unsafe void FastCopy(ReadOnlySpan<char> source, Span<char> destination)
+    private readonly void FastCopy(ReadOnlySpan<char> source, Span<char> destination)
     {
-        fixed (char* s = source, d = destination) Unsafe.CopyBlock(d, s, (uint)source.Length * 2);
+        unsafe { fixed (char* s = source, d = destination) Unsafe.CopyBlock(d, s, (uint)source.Length * 2); }
     }
 
     /// <summary>
@@ -240,21 +240,6 @@ public ref struct ValueStringBuilder : IDisposable
             ArrayPool<char>.Shared.Return(_rentedArray);
 
         _span = _rentedArray = newArray;
-    }
-
-    [UnscopedRef]
-    private ref Vsb AppendSpanFormattable<T>(T value) where T : ISpanFormattable => ref AppendSpanFormattable(value, default, null);
-
-    [UnscopedRef]
-    private ref Vsb AppendSpanFormattable<T>(T value, string? format, IFormatProvider? provider) where T : ISpanFormattable
-    {
-        if (value.TryFormat(_span[_position..], out int charsWritten, format, provider))
-        {
-            _position += charsWritten;
-            return ref this;
-        }
-
-        return ref Append(value.ToString());
     }
 
     #endregion
@@ -282,7 +267,7 @@ public ref struct ValueStringBuilder : IDisposable
 
     #endregion
 
-    #region Append(...)
+    #region Core Append(...)
 
     /// <summary>
     ///     Appends a character 0 or more times to the end of this builder.
@@ -306,6 +291,61 @@ public ref struct ValueStringBuilder : IDisposable
     }
 
     /// <summary>
+    ///     Appends the string representation of a specified <see cref="char"/> object to this instance.
+    /// </summary>
+    /// <param name="value"> The UTF-16-encoded code unit to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb Append(char value)
+    {
+        if (_position == _span.Length)
+            Grow(1);
+
+        // Skip bounds check.
+        Unsafe.Add(ref MemoryMarshal.GetReference(_span), _position++) = value;
+
+        return ref this;
+    }
+
+    /// <summary>
+    ///     Appends the string representation of a specified read-only character span to this instance.
+    /// </summary>
+    /// <param name="value"> The read-only character span to append. </param>
+    /// <returns> A reference to this instance after the append operation is completed. </returns>
+    [UnscopedRef]
+    public ref Vsb Append(ReadOnlySpan<char> value)
+    {
+        int length = value.Length;
+
+        if (_position + length > _span.Length) Grow(length);
+
+        FastCopy(value, _span[_position..]);
+
+        _position += length;
+
+        return ref this;
+    }
+
+    [UnscopedRef]
+    private ref Vsb AppendSpanFormattable<T>(T value) where T : ISpanFormattable => ref AppendSpanFormattable(value, default, null);
+
+    [UnscopedRef]
+    private ref Vsb AppendSpanFormattable<T>(T value, string? format, IFormatProvider? provider) where T : ISpanFormattable
+    {
+        if (value.TryFormat(_span[_position..], out int charsWritten, format, provider))
+        {
+            _position += charsWritten;
+            return ref this;
+        }
+
+        return ref Append(value.ToString());
+    }
+
+    #endregion
+
+    #region Type Append(...)
+
+    /// <summary>
     ///     Appends a range of characters to the end of this builder.
     /// </summary>
     /// <param name="value"> The characters to append. </param>
@@ -315,12 +355,7 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Append(char[]? value, int startIndex = 0, int charCount = -1)
     {
-        if (value != null && charCount != 0)
-        {
-            if (charCount == -1) charCount = value.Length;
-
-            Append(MemoryMarshal.CreateReadOnlySpan(ref value[startIndex], charCount));
-        }
+        if (value != null && charCount != 0) Append(value.AsSpan(startIndex, charCount == -1 ? value.Length : charCount));
 
         return ref this;
     }
@@ -333,7 +368,7 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Append(string? value)
     {
-        if (value is not null) Append(value.AsSpan());
+        if (value != null) Append(value.AsSpan());
 
         return ref this;
     }
@@ -372,43 +407,12 @@ public ref struct ValueStringBuilder : IDisposable
     public ref Vsb Append(Vsb value, int startIndex, int count) => ref Append(value._span.Slice(startIndex, count));
 
     /// <summary>
-    ///     Appends the default line terminator to the end of the current <see cref="Vsb"/>.
-    /// </summary>
-    /// <returns> A reference to this instance after the append operation has completed. </returns>s
-    [UnscopedRef]
-    public ref Vsb AppendLine() => ref Append(Environment.NewLine);
-
-    /// <summary>
-    ///     Appends a copy of the specified string followed by the default line terminator to the end of the current <see cref="Vsb"/> object.
-    /// </summary>
-    /// <returns> A reference to this instance after the append operation has completed. </returns>
-    [UnscopedRef]
-    public ref Vsb AppendLine(string? value) => ref Append(value).Append(Environment.NewLine);
-
-    /// <summary>
     ///     Appends the string representation of a specified Boolean value to this instance.
     /// </summary>
     /// <param name="value"> The Boolean value to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
     public ref Vsb Append(bool value) => ref Append(value.ToString());
-
-    /// <summary>
-    ///     Appends the string representation of a specified <see cref="char"/> object to this instance.
-    /// </summary>
-    /// <param name="value"> The UTF-16-encoded code unit to append. </param>
-    /// <returns> A reference to this instance after the append operation has completed. </returns>
-    [UnscopedRef]
-    public ref Vsb Append(char value)
-    {
-        if (_position >= _span.Length)
-            Grow(1);
-
-        // Skip bounds check, Grow(1) will always succeed.
-        Unsafe.Add(ref MemoryMarshal.GetReference(_span), _position++) = value;
-
-        return ref this;
-    }
 
     /// <summary>
     ///     Appends the string representation of a specified 8-bit signed integer to this instance.
@@ -532,23 +536,9 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="value"> The array of characters to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Append(char[]? value) => ref Append(new Span<char>(value));
-
-    /// <summary>
-    ///     Appends the string representation of a specified read-only character span to this instance.
-    /// </summary>
-    /// <param name="value"> The read-only character span to append. </param>
-    /// <returns> A reference to this instance after the append operation is completed. </returns>
-    [UnscopedRef]
-    public ref Vsb Append(ReadOnlySpan<char> value)
+    public ref Vsb Append(char[]? value)
     {
-        int length = value.Length;
-
-        if (_position + length > _span.Length) Grow(length);
-
-        FastCopy(value, _span[_position..]);
-
-        _position += length;
+        if (value != null) Append(value.AsSpan());
 
         return ref this;
     }
@@ -569,6 +559,229 @@ public ref struct ValueStringBuilder : IDisposable
     /// <returns> A reference to this instance after the append operation is completed. </returns>
     [UnscopedRef]
     public unsafe ref Vsb Append(char* value, int valueCount) => ref Append(new ReadOnlySpan<char>(value, valueCount));
+
+    #endregion
+
+    #region AppendLine(...)
+
+    /// <summary>
+    ///     Appends the default line terminator to the end of the current <see cref="Vsb"/>.
+    /// </summary>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine()
+    {
+        if (!OperatingSystem.IsWindows())
+            return ref Append('\n');
+
+        if (_position + 1 == _span.Length)
+            Grow(2);
+
+        Unsafe.As<char, int>(ref Unsafe.Add(ref MemoryMarshal.GetReference(_span), _position)) = 0x000A000D;
+
+        _position += 2;
+
+        return ref this;
+    }
+
+    /// <summary>
+    ///     Appends a character 0 or more times to the end of this buillder, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The character to append. </param>
+    /// <param name="repeatCount"> The number of times to append <paramref name="value"/>. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(char value, int repeatCount) => ref Append(value, repeatCount).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified <see cref="char"/> object to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The UTF-16-encoded code unit to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(char value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified read-only character span to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The read-only character span to append. </param>
+    /// <returns> A reference to this instance after the append operation is completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(ReadOnlySpan<char> value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends a range of characters to the end of this builder, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The characters to append. </param>
+    /// <param name="startIndex"> The index to start in <paramref name="value"/>. </param>
+    /// <param name="charCount"> The number of characters to read in <paramref name="value"/>. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(char[]? value, int startIndex = 0, int charCount = -1) => ref Append(value, startIndex, charCount).AppendLine();
+
+    /// <summary>
+    ///     Appends a copy of the specified string followed by the default line terminator to the end of the current <see cref="Vsb"/> object.
+    /// </summary>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(string? value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends part of a string to the end of this builder, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The string to append. </param>
+    /// <param name="startIndex"> The index to start in <paramref name="value"/>. </param>
+    /// <param name="count"> The number of characters to read in <paramref name="value"/>. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(string? value, int startIndex, int count) => ref Append(value, startIndex, count).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified builder to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The builder to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(Vsb value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends a copy of a substring within a specified builder to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The builder to append. </param>
+    /// <param name="startIndex"> The starting position of the substring within value. </param>
+    /// <param name="count"> The number of characters in <paramref name="value"/> to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(Vsb value, int startIndex, int count) => ref Append(value, startIndex, count).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified Boolean value to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The Boolean value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(bool value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified 8-bit signed integer to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(sbyte value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified 8-bit unsigned integer to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(byte value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified 16-bit signed integer to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(short value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified 32-bit signed integer to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(int value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified 64-bit signed integer to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(long value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified single-precision floating-point number to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(float value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified double-precision floating-point number to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(double value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified decimal number to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(decimal value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified 16-bit unsigned integer to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(ushort value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified 32-bit unsigned integer to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(uint value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified 64-bit unsigned integer to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The value to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(ulong value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified object to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The object to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(object? value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of the Unicode characters in a specified array to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The array of characters to append. </param>
+    /// <returns> A reference to this instance after the append operation has completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(char[]? value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends the string representation of a specified read-only character memory region to this instance, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The read-only character memory region to append. </param>
+    /// <returns> A reference to this instance after the append operation is completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(ReadOnlyMemory<char> value) => ref Append(value).AppendLine();
+
+    /// <summary>
+    ///     Appends a character buffer to this builder, followed by the default line terminator.
+    /// </summary>
+    /// <param name="value"> The pointer to the start of the buffer. </param>
+    /// <param name="valueCount"> The number of characters in the buffer. </param>
+    /// <returns> A reference to this instance after the append operation is completed. </returns>
+    [UnscopedRef]
+    public ref Vsb AppendLine(char* value, int valueCount) => ref Append(value, valueCount).AppendLine();
 
     #endregion
 
@@ -1106,7 +1319,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="handler"> The interpolated string to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Append([InterpolatedStringHandlerArgument("")] ref AppendInterpolatedStringHandler handler)
+    public ref Vsb Append([InterpolatedStringHandlerArgument(""), UnscopedRef] ref AppendInterpolatedStringHandler handler)
     {
         Copy(ref handler._stringBuilder, ref this);
 
