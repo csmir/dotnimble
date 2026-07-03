@@ -25,3 +25,14 @@ internal class TestSrv(ILogger<TestSrv> logger, IServiceLazy<WrittenLogTracker> 
         return Task.CompletedTask;
     }
 }
+
+public sealed class TestClassOuter
+{
+    private class TestClassInner
+    {
+        private class TestClassInnerImpl : TestClassInner
+        {
+
+        }
+    }
+}

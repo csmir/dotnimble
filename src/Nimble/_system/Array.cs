@@ -10,6 +10,121 @@ namespace System;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class ArrayExtensions
 {
+    extension<T>(T[] arr)
+    {
+        /// <summary>
+        ///     Converts the provided array into a value-tuple of 2 elements. This method throws if the array has less than 2 elements.
+        /// </summary>
+        /// <param name="validateLongerLength">If set to <see langword="true"/>, the method will throw if the array has more than 2 elements.</param>
+        /// <returns>A value-tuple containing the first two elements of the array.</returns>
+        /// <exception cref="ArgumentOutOfRangeException" />
+        public (T, T) AsTuple2(bool validateLongerLength = false)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(arr.Length, 2, nameof(arr));
+
+            if (validateLongerLength)
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(arr.Length, 2, nameof(arr));
+
+            return (arr[0], arr[1]);
+        }
+
+        /// <summary>
+        ///     Converts the provided array into a value-tuple of 3 elements. This method throws if the array has less than 3 elements.
+        /// </summary>
+        /// <param name="validateLongerLength">If set to <see langword="true"/>, the method will throw if the array has more than 3 elements.</param>
+        /// <returns>A value-tuple containing the first three elements of the array.</returns>
+        /// <exception cref="ArgumentOutOfRangeException" />
+        public (T, T, T) AsTuple3(bool validateLongerLength = false)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(arr.Length, 3, nameof(arr));
+
+            if (validateLongerLength)
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(arr.Length, 3, nameof(arr));
+
+            return (arr[0], arr[1], arr[2]);
+        }
+
+        /// <summary>
+        ///     Converts the provided array into a value-tuple of 4 elements. This method throws if the array has less than 4 elements.
+        /// </summary>
+        /// <param name="validateLongerLength">If set to <see langword="true"/>, the method will throw if the array has more than 4 elements.</param>
+        /// <returns>A value-tuple containing the first four elements of the array.</returns>
+        /// <exception cref="ArgumentOutOfRangeException" />
+        public (T, T, T, T) AsTuple4(bool validateLongerLength = false)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(arr.Length, 4, nameof(arr));
+
+            if (validateLongerLength)
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(arr.Length, 4, nameof(arr));
+
+            return (arr[0], arr[1], arr[2], arr[3]);
+        }
+
+        /// <summary>
+        ///     Converts the provided array into a value-tuple of 5 elements. This method throws if the array has less than 5 elements.
+        /// </summary>
+        /// <param name="validateLongerLength">If set to <see langword="true"/>, the method will throw if the array has more than 5 elements.</param>
+        /// <returns>A value-tuple containing the first five elements of the array.</returns>
+        /// <exception cref="ArgumentOutOfRangeException" />
+        public (T, T, T, T, T) AsTuple5(bool validateLongerLength = false)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(arr.Length, 5, nameof(arr));
+
+            if (validateLongerLength)
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(arr.Length, 5, nameof(arr));
+
+            return (arr[0], arr[1], arr[2], arr[3], arr[4]);
+        }
+
+        /// <summary>
+        ///     Converts the provided array into a value-tuple of 6 elements. This method throws if the array has less than 6 elements.
+        /// </summary>
+        /// <param name="validateLongerLength">If set to <see langword="true"/>, the method will throw if the array has more than 6 elements.</param>
+        /// <returns>A value-tuple containing the first six elements of the array.</returns>
+        /// <exception cref="ArgumentOutOfRangeException" />
+        public (T, T, T, T, T, T) AsTuple6(bool validateLongerLength = false)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(arr.Length, 6, nameof(arr));
+
+            if (validateLongerLength)
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(arr.Length, 6, nameof(arr));
+
+            return (arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]);
+        }
+
+        /// <summary>
+        ///     Converts the provided array into a value-tuple of 7 elements. This method throws if the array has less than 7 elements.
+        /// </summary>
+        /// <param name="validateLongerLength">If set to <see langword="true"/>, the method will throw if the array has more than 7 elements.</param>
+        /// <returns>A value-tuple containing the first seven elements of the array.</returns>
+        /// <exception cref="ArgumentOutOfRangeException" />
+        public (T, T, T, T, T, T, T) AsTuple7(bool validateLongerLength = false)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(arr.Length, 7, nameof(arr));
+
+            if (validateLongerLength)
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(arr.Length, 7, nameof(arr));
+
+            return (arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6]);
+        }
+
+        /// <summary>
+        ///     Converts the provided array into a value-tuple of 8 elements. This method throws if the array has less than 8 elements.
+        /// </summary>
+        /// <param name="validateLongerLength">If set to <see langword="true"/>, the method will throw if the array has more than 8 elements.</param>
+        /// <returns>A value-tuple containing the first eight elements of the array.</returns>
+        /// <exception cref="ArgumentOutOfRangeException" />
+        public (T, T, T, T, T, T, T, T) AsTuple8(bool validateLongerLength = false)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(arr.Length, 8, nameof(arr));
+
+            if (validateLongerLength)
+                ArgumentOutOfRangeException.ThrowIfGreaterThan(arr.Length, 8, nameof(arr));
+
+            return (arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], arr[6], arr[7]);
+        }
+    }
+
     extension(Array array)
     {
         /// <summary>

@@ -10,7 +10,7 @@
 	  <LangVersion>preview</LangVersion>
 
 		<AssemblyVersion>1.0</AssemblyVersion>
-		<PackageVersion>1.0.0-alpha.10</PackageVersion>
+		<PackageVersion>1.0.0-alpha.11</PackageVersion>
 		<!--\-alpha.1-->
 		<FileVersion>1.0.0.0</FileVersion>
 		

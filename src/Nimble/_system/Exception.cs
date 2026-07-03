@@ -8,6 +8,41 @@ namespace System;
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class ExceptionExtensions
 {
+    extension(ArgumentOutOfRangeException ex)
+    {
+#if !NET6_0_OR_GREATER
+        /// <summary>
+        ///     Throws when the provided value is less than the specified minimum value.
+        /// </summary>
+        /// <typeparam name="T">The type of the value to compare.</typeparam>
+        /// <param name="value">The value to check.</param>
+        /// <param name="minValue">The minimum value to compare against.</param>
+        /// <param name="argumentExpression">The name of the argument to include in the exception message.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when the value is less than the minimum value.</exception>
+        public static void ThrowIfLessThan<T>(T value, T minValue, string? argumentExpression = null) 
+            where T : IComparable<T>
+        {
+            if (value.CompareTo(minValue) < 0)
+                throw new ArgumentOutOfRangeException(argumentExpression, value, $"Argument '{argumentExpression}' must be greater than or equal to {minValue}.");
+        }
+
+        /// <summary>
+        ///     Throws when the provided value is greater than the specified maximum value.
+        /// </summary>
+        /// <typeparam name="T">The type of the value to compare.</typeparam>
+        /// <param name="value">The value to check.</param>
+        /// <param name="maxValue">The maximum value to compare against.</param>
+        /// <param name="argumentExpression">The name of the argument to include in the exception message.</param>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when the value is greater than the maximum value.</exception>
+        public static void ThrowIfGreaterThan<T>(T value, T maxValue, string? argumentExpression = null)
+            where T : IComparable<T>
+        {
+            if (value.CompareTo(maxValue) > 0)
+                throw new ArgumentOutOfRangeException(argumentExpression, value, $"Argument '{argumentExpression}' must be less than or equal to {maxValue}.");
+        }
+#endif
+    }
+
     extension(ArgumentException ex)
     {
         /// <summary>
