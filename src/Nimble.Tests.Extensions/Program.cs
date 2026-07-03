@@ -9,12 +9,12 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Logging
     .SetMinimumLevel(LogLevel.Trace)
-    .AddPrettierConsole(configure =>
+    .AddPrettierConsole(static configure =>
     {
         configure.TimestampColor = ConsoleColor.DarkCyan;
         configure.SpecialCategoryPrefix = "Nimble.Tests";
     })
-    .AddConsoleListener(configure =>
+    .AddConsoleListener(static configure =>
     {
         configure.CreateScopes = true;
         configure.OnReadlineCompleted = HandleCommand;
