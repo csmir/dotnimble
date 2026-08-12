@@ -781,7 +781,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="valueCount"> The number of characters in the buffer. </param>
     /// <returns> A reference to this instance after the append operation is completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendLine(char* value, int valueCount) => ref Append(value, valueCount).AppendLine();
+    public unsafe ref Vsb AppendLine(char* value, int valueCount) => ref Append(value, valueCount).AppendLine();
 
     #endregion
 
@@ -1389,7 +1389,7 @@ public ref struct ValueStringBuilder : IDisposable
         ///     It's a manual copy/paste right now to avoid pressure on the JIT's inlining mechanisms.
         /// </remarks>
         [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "TryFormatUnconstrained")]
-        internal static extern bool TryFormatUnconstrained<T>(T value, Span<char> destination, out int charsWritten, [StringSyntax(StringSyntaxAttribute.EnumFormat)] ReadOnlySpan<char> format = default);
+        internal static extern bool TryFormatUnconstrained<T>(Enum _, T value, Span<char> destination, out int charsWritten, [StringSyntax(StringSyntaxAttribute.EnumFormat)] ReadOnlySpan<char> format = default);
 
         /// <summary>
         ///     The associated builder to append strings to.
@@ -1483,7 +1483,7 @@ public ref struct ValueStringBuilder : IDisposable
             {
                 if (typeof(T).IsEnum)
                 {
-                    if (TryFormatUnconstrained(value, _stringBuilder.AppendTarget, out int charsWritten))
+                    if (TryFormatUnconstrained(null!, value, _stringBuilder.AppendTarget, out int charsWritten))
                     {
                         _stringBuilder.Length += charsWritten;
                     }
