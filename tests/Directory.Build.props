@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SrcPath>..\..\src</SrcPath>
+  </PropertyGroup>
+</Project>

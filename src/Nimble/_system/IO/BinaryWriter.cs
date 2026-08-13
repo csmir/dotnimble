@@ -22,24 +22,24 @@ public static class BinaryWriterExtensions
         /// <exception cref="ObjectDisposedException">The stream is closed.</exception>
         public void WriteStruct<T>(T source) where T : unmanaged
         {
-#if NET6_0_OR_GREATER
             unsafe
             {
+#if NET6_0_OR_GREATER
                 writer.Write(new ReadOnlySpan<byte>(&source, sizeof(T)));
-            }
 #else
-            byte[] bytes = new byte[sizeof(T)];
+                byte[] bytes = new byte[sizeof(T)];
 
-            fixed (byte* dst = bytes)
-            {
-                unsafe
+                fixed (byte* dst = bytes)
                 {
-                    Buffer.MemoryCopy(&source, dst, sizeof(T), sizeof(T));
+                    unsafe
+                    {
+                        Buffer.MemoryCopy(&source, dst, sizeof(T), sizeof(T));
+                    }
                 }
-            }
 
-            writer.Write(bytes);
+                writer.Write(bytes);
 #endif
+            }
         }
 
         /// <summary>

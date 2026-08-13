@@ -1,61 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-	<PropertyGroup>
-		<TargetFrameworks>net10.0;netstandard2.0</TargetFrameworks>
-		<NoWarn>CA1822;IDE0130;IDE0290;IDE0056;SYSLIB1045</NoWarn>
-		<IsAotCompatible Condition="'$(TargetFramework)' == 'net10'">true</IsAotCompatible>
-		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<ImplicitUsings>enable</ImplicitUsings>
-		<LangVersion>preview</LangVersion>
-		<Nullable>enable</Nullable>
-		<RootNamespace>Nimble</RootNamespace>
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;netstandard2.0</TargetFrameworks>
 
-		<AssemblyVersion>1.0</AssemblyVersion>
-		<PackageVersion>1.0.0-alpha.11</PackageVersion> <!--\-alpha.1-->
-		<FileVersion>1.0.0.0</FileVersion>
+    <PackageId>dotnimble</PackageId>
+    <Title>dotnimble</Title>
+    <Description>Extends, improves and reimplements commonly used dotnet API's.</Description>
 
-		<GenerateDocumentationFile>true</GenerateDocumentationFile>
-		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
 
-		<PackageId>dotnimble</PackageId>
-
-		<Authors>dotnimble contributors.</Authors>
-		<Title>dotnimble</Title>
-		<Description>Extends, improves and reimplements commonly used dotnet API's.</Description>
-		<PackageTags>tooling, console, aot, memory, system</PackageTags>
-		<NeutralLanguage>en-US</NeutralLanguage>
-
-		<PackageProjectUrl>https://github.com/csmir/dotnimble</PackageProjectUrl>
-		<RepositoryUrl>https://github.com/csmir/dotnimble</RepositoryUrl>
-		<RepositoryType>git</RepositoryType>
-
-		<PackageIcon>dotnimble.png</PackageIcon>
-		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<PackageLicenseFile>LICENSE</PackageLicenseFile>
-	</PropertyGroup>
-
-	<ItemGroup>
-		<Using Include="System.Collections" />
-		<Using Include="System.Diagnostics.CodeAnalysis" />
-		<Using Include="System.Reflection" />
-		<Using Include="System.Runtime.CompilerServices" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<None Include="..\..\.editorconfig" />
-		<None Include="..\..\img\dotnimble.png">
-			<Pack>True</Pack>
-			<PackagePath>\</PackagePath>
-		</None>
-		<None Include="..\..\LICENSE">
-			<Pack>True</Pack>
-			<PackagePath>\</PackagePath>
-		</None>
-		<None Include="..\..\README.md">
-			<Pack>True</Pack>
-			<PackagePath>\</PackagePath>
-		</None>
-	</ItemGroup>
+  <ItemGroup>
+    <Using Include="System.Collections" />
+    <Using Include="System.Diagnostics.CodeAnalysis" />
+    <Using Include="System.Reflection" />
+    <Using Include="System.Runtime.CompilerServices" />
+  </ItemGroup>
 
 </Project>

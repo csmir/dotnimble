@@ -1,0 +1,61 @@
+<Project>
+
+  <PropertyGroup Label="Code Analysis">
+
+    <IsAotCompatible Condition="'$(TargetFramework)' == 'net10'">true</IsAotCompatible>
+    <NoWarn>CA1822;IDE0130;IDE0290;IDE0056;SYSLIB1045</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+
+  </PropertyGroup>
+
+  <PropertyGroup Label="File Generator">
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+  </PropertyGroup>
+
+  <PropertyGroup Label="Assembly/Package">
+
+    <PackageVersion>1.0.0-alpha.11</PackageVersion>
+    <AssemblyVersion>1.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+
+    <Authors>dotnimble contributors.</Authors>
+    <PackageTags>tooling, console, aot, memory, system</PackageTags>
+    <NeutralLanguage>en-US</NeutralLanguage>
+
+    <PackageProjectUrl>https://github.com/csmir/dotnimble</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/csmir/dotnimble</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <PackageIcon>dotnimble.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\.editorconfig" />
+
+    <None Include="..\..\img\dotnimble.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+
+    <None Include="..\..\LICENSE">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+
+    <None Include="..\..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+
+  </ItemGroup>
+
+</Project>

@@ -20,24 +20,24 @@ public static class BinaryReaderExtensions
         /// <exception cref="IOException">An I/O error occurs.</exception>
         public T ReadStruct<T>() where T : unmanaged
         {
-#if NET6_0_OR_GREATER
-            T value = new();
-
             unsafe
             {
+#if NET6_0_OR_GREATER
+                T value = new();
+
                 reader.ReadExactly(new(&value, sizeof(T)));
-            }
 
-            return value;
+                return value;
 #else
-            byte[] bytes = reader.ReadBytes(sizeof(T));
+                byte[] bytes = reader.ReadBytes(sizeof(T));
 
-            if (bytes.Length != sizeof(T))
-                throw new EndOfStreamException("Unable to read beyond the end of the stream.");
+                if (bytes.Length != sizeof(T))
+                    throw new EndOfStreamException("Unable to read beyond the end of the stream.");
 
-            fixed (byte* ptr = bytes)
-                return Marshal.PtrToStructure<T>((IntPtr)ptr);
+                fixed (byte* ptr = bytes)
+                    return Marshal.PtrToStructure<T>((IntPtr)ptr);
 #endif
+            }
         }
 
         /// <summary>
@@ -57,25 +57,25 @@ public static class BinaryReaderExtensions
 
             return store.ToArray();
 #else
-            int readLength = checked(sizeof(T) * count);
-
-            byte[] bytes = reader.ReadBytes(readLength);
-
-            if (bytes.Length != readLength)
-                throw new EndOfStreamException("Unable to read beyond the end of the stream.");
-
-            T[] elements = new T[count];
-
-            fixed (byte* b = bytes)
-            fixed (T* t = elements)
+            unsafe
             {
-                unsafe
+                int readLength = checked(sizeof(T) * count);
+
+                byte[] bytes = reader.ReadBytes(readLength);
+
+                if (bytes.Length != readLength)
+                    throw new EndOfStreamException("Unable to read beyond the end of the stream.");
+
+                T[] elements = new T[count];
+
+                fixed (byte* b = bytes)
+                fixed (T* t = elements)
                 {
                     Buffer.MemoryCopy(b, t, readLength, readLength);
                 }
-            }
 
-            return elements;
+                return elements;
+            }
 #endif
         }
     }
