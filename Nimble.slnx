@@ -2,6 +2,7 @@
   <Folder Name="/Source/">
     <File Path="src/Directory.Build.props" />
     <Project Path="src/Nimble.Extensions/Nimble.Extensions.csproj" Id="a5cccbde-aff1-41fc-8c1a-fa457f0a3d5b" />
+    <Project Path="src/Nimble.Intrinsics/Nimble.Intrinsics.csproj" Id="e45a0ddb-dbce-42ce-9b8b-ad3a08756f24" />
     <Project Path="src/Nimble/Nimble.csproj" />
   </Folder>
   <Folder Name="/Tests/">
