@@ -4,6 +4,8 @@ using System.Buffers;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text;
+using Nimble.Buffers;
 using Vsb = Nimble.Text.ValueStringBuilder;
 
 namespace Nimble.Text;
@@ -19,8 +21,8 @@ public ref struct ValueStringBuilder : IDisposable
 
     #region Fields
 
+    private SafeRentedArray<char>? _rentedArray;
     private Span<char> _span = new();
-    private char[]? _rentedArray;
     private int _position;
 
     #endregion
@@ -52,11 +54,21 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="capacity"> The initial capacity of this builder. </param>
     public ValueStringBuilder(string? value, int startIndex, int length, int capacity)
     {
+        int valueLength = value?.Length ?? 0;
+
+        ArgumentOutOfRangeException.ThrowIfOutOfRange(startIndex, 0, valueLength);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)length, (uint)(valueLength - startIndex));
+
+        MaxCapacity = int.MaxValue;
+
         int initialCapacity = capacity > length ? capacity : length;
 
-        _span = (initialCapacity > 0) ? (_rentedArray = ArrayPool<char>.Shared.Rent(initialCapacity)) : [];
+        if (initialCapacity > MaxCapacity) ThrowCapacityTooHigh();
 
-        if (length > 0)
+        _span = initialCapacity > 0 ? (_rentedArray = SafeArrayPool<char>.Shared.Rent(initialCapacity)).Array.AsSpan(0, Math.Min(initialCapacity, MaxCapacity)) : [];
+
+        if (length != 0)
         {
             FastCopy(value.AsSpan(startIndex, length), _span);
             _position = length;
@@ -70,9 +82,15 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="maxCapacity"> The maximum capacity of this builder. </param>
     public ValueStringBuilder(int capacity, int maxCapacity = int.MaxValue)
     {
-        _span = (capacity > 0) ? (_rentedArray = ArrayPool<char>.Shared.Rent(capacity)) : [];
+        ArgumentOutOfRangeException.ThrowIfNegative(maxCapacity);
+        ArgumentOutOfRangeException.ThrowIfNegative(capacity);
 
         MaxCapacity = maxCapacity;
+
+        if (capacity > maxCapacity)
+            ThrowCapacityTooHigh();
+
+        _span = capacity > 0 ? (_rentedArray = SafeArrayPool<char>.Shared.Rent(capacity)).Array.AsSpan(0, Math.Min(capacity, maxCapacity)) : [];
     }
 
     /// <summary>
@@ -82,8 +100,27 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="maxCapacity"> The maximum capacity of this builder. </param>
     public ValueStringBuilder(Span<char> initialStore, int maxCapacity = int.MaxValue)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxCapacity);
+
         MaxCapacity = maxCapacity;
-        _span = initialStore;
+
+        _span = initialStore[..Math.Min(initialStore.Length, maxCapacity)];
+    }
+
+    #endregion
+
+    #region Throw Helpers
+
+    [DoesNotReturn]
+    private static void ThrowCapacityTooHigh()
+    {
+        throw new InvalidOperationException("The requested operation would exceed the maximum capacity of the current ValueStringBuilder instance.");
+    }
+
+    [DoesNotReturn]
+    private static void ThrowCapacityTooLow()
+    {
+        throw new InvalidOperationException("The requested operation would reduce capacity below the length of the current ValueStringBuilder instance.");
     }
 
     #endregion
@@ -101,13 +138,19 @@ public ref struct ValueStringBuilder : IDisposable
 
         set
         {
+            ArgumentOutOfRangeException.ThrowIfNegative(value);
+
+            if (value > MaxCapacity) ThrowCapacityTooHigh();
+
+            if (value < _position) ThrowCapacityTooLow();
+
             if (value > _span.Length)
             {
-                Grow(value - _span.Length);
+                GrowStorage(value);
             }
-            else if (value < _position)
+            else if (value < _span.Length)
             {
-                _position = value;
+                ShrinkStorage(value);
             }
         }
     }
@@ -115,7 +158,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <summary>
     ///     Gets the maximum capacity this builder is allowed to have.
     /// </summary>
-    public readonly int MaxCapacity { get; }
+    public int MaxCapacity { get; private init; }
 
     /// <summary>
     ///     Gets or sets the length of this builder.
@@ -124,7 +167,29 @@ public ref struct ValueStringBuilder : IDisposable
     {
         readonly get => _position;
 
-        set => _position = value;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(value);
+
+            if (value < _position)
+            {
+                _position = value;
+                return;
+            }
+
+            EnsureCapacity(value);
+
+            unsafe
+            {
+                fixed (char* c = _span)
+                {
+                    byte* b = (byte*)(c + _position);
+                    NativeMemory.Clear(b, (nuint)(value - _position) * sizeof(char));
+                }
+            }
+
+            _position = value;
+        }
     }
 
     #endregion
@@ -134,18 +199,38 @@ public ref struct ValueStringBuilder : IDisposable
     /// <summary>
     ///     Ensures that the capacity of this builder is at least the specified value.
     /// </summary>
-    /// <param name="capacity"> The new capacity for this builder. </param>
+    /// <param name="requestedCapacity"> The new capacity for this builder. </param>
     /// <remarks>
-    ///     If <paramref name="capacity"/> is less than or equal to the current capacity of this builder, the capacity remains unchanged.
+    ///     If <paramref name="requestedCapacity"/> is less than or equal to the current capacity of this builder, the capacity remains unchanged.
     /// </remarks>
     /// <returns> The builder's new capacity. </returns>
-    public int EnsureCapacity(int capacity)
+    public int EnsureCapacity(int requestedCapacity)
     {
-        if (Capacity < capacity) Capacity = capacity;
+        ArgumentOutOfRangeException.ThrowIfNegative(requestedCapacity);
+
+        if (requestedCapacity <= _span.Length)
+            return _span.Length;
+
+        Capacity = _span.Length <= int.MaxValue / 2 ? Math.Max(_span.Length * 2, requestedCapacity) : requestedCapacity;
 
         return Capacity;
     }
 
+    /// <summary>
+    ///     Attempts to grow the builder by an arbitrary amount.
+    /// </summary>
+    private bool GrowCapacity()
+    {
+        if (_span.Length == MaxCapacity) return false;
+
+        int current = _span.Length;
+
+        int next = current == 0 ? 16 : current <= int.MaxValue / 2 ? current * 2 : int.MaxValue;
+
+        EnsureCapacity(Math.Min(next, MaxCapacity));
+
+        return true;
+    }
     /// <summary>
     ///     Removes all characters from the current <see cref="Vsb"/> instance.
     /// </summary>
@@ -164,8 +249,19 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="index"> The position of the character. </param>
     public char this[int index]
     {
-        readonly get => _span[index];
-        set => _span[index] = value;
+        readonly get
+        {
+            ArgumentOutOfRangeException.ThrowIfOutOfRange(index, 0, _position);
+
+            return _span[index];
+        }
+
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfOutOfRange(index, 0, _position);
+
+            _span[index] = value;
+        }
     }
 
     /// <summary>
@@ -178,7 +274,14 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Remove(int startIndex, int length)
     {
-        FastCopy(_span[(startIndex + length).._position], _span[startIndex..]);
+        ArgumentOutOfRangeException.ThrowIfNegative(startIndex);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+
+        int endIndex = startIndex + length;
+
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)endIndex, (uint)_position);
+
+        FastMove(_span[endIndex.._position], _span[startIndex..]);
 
         _position -= length;
 
@@ -192,54 +295,114 @@ public ref struct ValueStringBuilder : IDisposable
     public readonly Span<char>.Enumerator GetEnumerator() => _span[.._position].GetEnumerator();
 
     /// <summary>
-    ///     Converts the current contents of the builder to a string, and destroys the builder by returning the rented array to the pool.<br/>
-    ///     Only call at the end of the builder's lifetime, as it will no longer be usable after this call.
+    ///     Converts the value of this instance to a <see cref="string"/>.
     /// </summary>
-    /// <returns> The string representation of the builder's contents. </returns>
-    public override readonly string ToString() => new(_span[.._position]); // This moves directly to a runtime-internal call
+    /// <returns> A string whose value is the same as this instance. </returns>
+    public override readonly string ToString()
+    {
+        return new(_span[.._position]); // This moves directly to a runtime-internal call
+    }
 
     /// <summary>
-    ///     Creates a string from a substring of this builder.
+    ///     Converts the value of a substring of this instance to a <see cref="string"/>.
     /// </summary>
-    /// <param name="startIndex"> The index to start in this builder. </param>
-    /// <param name="length"> The number of characters to read in this builder. </param>
-    public readonly string ToString(int startIndex, int length) => _span.Slice(startIndex, length).ToString();
+    /// <param name="startIndex"> The starting position of the substring in this instance. </param>
+    /// <param name="length"> The length of the substring. </param>
+    /// <returns> A string whose value is the same as the specified substring of this instance. </returns>
+    /// <exception cref="ArgumentOutOfRangeException"/>
+    public readonly string ToString(int startIndex, int length) => _span[.._position].Slice(startIndex, length).ToString();
+
+    /// <summary>
+    ///     Creates a copy of the current <see cref="Vsb"/> instance that is safe to dispose. Standard copies may result in undefined behaviour.
+    /// </summary>
+    public readonly Vsb CreateValueCopy()
+    {
+        _rentedArray?.AddReference();
+
+        Vsb copy = new()
+        {
+            MaxCapacity = MaxCapacity,
+
+            _rentedArray = _rentedArray,
+            _position = _position,
+            _span = _span,
+        };
+
+
+        return copy;
+    }
 
     /// <inheritdoc />
     public readonly void Dispose()
     {
-        if (_rentedArray != null)
-            ArrayPool<char>.Shared.Return(_rentedArray);
+        _rentedArray?.Dispose();
     }
 
     #endregion
 
     #region Internal Helpers
 
-    private readonly void FastCopy(ReadOnlySpan<char> source, Span<char> destination)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private readonly void FastCopy(scoped ReadOnlySpan<char> source, scoped Span<char> destination)
     {
-        unsafe { fixed (char* s = source, d = destination) Unsafe.CopyBlock(d, s, (uint)source.Length * 2); }
+        unsafe { fixed (char* s = source, d = destination) Unsafe.CopyBlock(d, s, (uint)source.Length * sizeof(char)); }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void FastMove(scoped ReadOnlySpan<char> source, scoped Span<char> destination)
+    {
+        source.CopyTo(destination);
     }
 
     /// <summary>
     ///     Grows the internal buffer to accommodate additional characters.
     /// </summary>
-    /// <param name="requested">The minimum number of additional characters required.</param>
-    private void Grow(int requested)
+    /// <param name="requestedSize"> The minimum storage size to accomodate. </param>
+    private void GrowStorage(int requestedSize)
     {
-        int newCapacity = _span.Length * 2;
+        SafeRentedArray<char> newArray = SafeArrayPool<char>.Shared.Rent(requestedSize);
 
-        if (newCapacity < _span.Length + requested)
-            newCapacity = _span.Length + requested;
+        FastCopy(_span[.._position], newArray.Array);
 
-        char[] newArray = ArrayPool<char>.Shared.Rent(newCapacity);
+        _rentedArray?.Dispose();
 
-        FastCopy(_span, newArray.AsSpan(0, _position));
+        _span = (_rentedArray = newArray).Array.AsSpan(0, Math.Min(newArray.Array.Length, MaxCapacity));
+    }
 
-        if (_rentedArray != null)
-            ArrayPool<char>.Shared.Return(_rentedArray);
+    /// <summary>
+    ///     Shrinks the internal buffer destructively.
+    /// </summary>
+    /// <param name="requestedSize"> The storage size to attempt to shrink towards. </param>
+    private void ShrinkStorage(int requestedSize)
+    {
+        // Quick path for ShrinkStorage(0)
+        if (requestedSize == 0)
+        {
+            _rentedArray?.Dispose();
+            _rentedArray = null;
+            _span = [];
+            return;
+        }
 
-        _span = _rentedArray = newArray;
+        SafeRentedArray<char> newArray = SafeArrayPool<char>.Shared.Rent(requestedSize);
+
+        FastCopy(_span[..requestedSize], newArray.Array.AsSpan(0, requestedSize));
+
+        _rentedArray?.Dispose();
+
+        _span = (_rentedArray = newArray).Array.AsSpan(0, requestedSize);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private readonly ReadOnlySpan<char> GetNonOverlappingSpan(ReadOnlySpan<char> value)
+    {
+        if (!value.Overlaps(_span)) return value;
+
+        char[] buffer = GC.AllocateUninitializedArray<char>(value.Length);
+
+        FastCopy(value, buffer);
+
+        return buffer;
     }
 
     #endregion
@@ -254,7 +417,16 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="destinationIndex"> The starting position in <paramref name="destination"/> where characters will be copied. The index is zero-based. </param>
     /// <param name="count"> The number of characters to be copied. </param>
 
-    public readonly void CopyTo(int sourceIndex, char[] destination, int destinationIndex, int count) => FastCopy(_span[sourceIndex..], new(destination, destinationIndex, count));
+    public readonly void CopyTo(int sourceIndex, char[] destination, int destinationIndex, int count)
+    {
+        ReadOnlySpan<char> source = _span.Slice(sourceIndex, count);
+        Span<char> target = destination.AsSpan(destinationIndex, count);
+
+        if (source.Overlaps(target))
+            source.CopyTo(target);
+        else
+            FastCopy(source, target);
+    }
 
     ///  <summary>
     ///     Copies the characters from a specified segment of this instance to a destination <see cref="char"/> span.
@@ -263,7 +435,15 @@ public ref struct ValueStringBuilder : IDisposable
     ///  <param name="destination"> The writable span where characters will be copied. </param>
     ///  <param name="count"> The number of characters to be copied. </param>
 
-    public readonly void CopyTo(int sourceIndex, Span<char> destination, int count) => FastCopy(_span.Slice(sourceIndex, count), destination);
+    public readonly void CopyTo(int sourceIndex, scoped Span<char> destination, int count)
+    {
+        ReadOnlySpan<char> source = _span.Slice(sourceIndex, count);
+
+        if (source.Overlaps(destination))
+            source.CopyTo(destination);
+        else
+            FastCopy(source, destination);
+    }
 
     #endregion
 
@@ -278,9 +458,11 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Append(char value, int repeatCount)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(repeatCount);
+
         if (repeatCount != 0)
         {
-            EnsureCapacity(_position + repeatCount);
+            EnsureCapacity(checked(_position + repeatCount));
 
             _span[_position..(_position + repeatCount)].Fill(value);
 
@@ -298,8 +480,7 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Append(char value)
     {
-        if (_position == _span.Length)
-            Grow(1);
+        EnsureCapacity(checked(_position + 1));
 
         // Skip bounds check.
         Unsafe.Add(ref MemoryMarshal.GetReference(_span), _position++) = value;
@@ -313,15 +494,15 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="value"> The read-only character span to append. </param>
     /// <returns> A reference to this instance after the append operation is completed. </returns>
     [UnscopedRef]
-    public ref Vsb Append(ReadOnlySpan<char> value)
+    public ref Vsb Append(scoped ReadOnlySpan<char> value)
     {
-        int length = value.Length;
+        value = GetNonOverlappingSpan(value);
 
-        if (_position + length > _span.Length) Grow(length);
+        EnsureCapacity(checked(_position + value.Length));
 
         FastCopy(value, _span[_position..]);
 
-        _position += length;
+        _position += value.Length;
 
         return ref this;
     }
@@ -332,13 +513,16 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     private ref Vsb AppendSpanFormattable<T>(T value, string? format, IFormatProvider? provider) where T : ISpanFormattable
     {
-        if (value.TryFormat(_span[_position..], out int charsWritten, format, provider))
+        if (!value.TryFormat(_span[_position..], out int charsWritten, format, provider))
         {
-            _position += charsWritten;
-            return ref this;
+            while (!value.TryFormat(_span[_position..], out charsWritten, format, provider))
+            {
+                if (!GrowCapacity()) ThrowCapacityTooHigh();
+            }
         }
 
-        return ref Append(value.ToString());
+        _position += charsWritten;
+        return ref this;
     }
 
     #endregion
@@ -355,7 +539,23 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Append(char[]? value, int startIndex = 0, int charCount = -1)
     {
-        if (value != null && charCount != 0) Append(value.AsSpan(startIndex, charCount == -1 ? value.Length : charCount));
+        if (value == null)
+        {
+            ArgumentOutOfRangeException.ThrowIfNotEqual(startIndex, 0);
+            ArgumentOutOfRangeException.ThrowIfNotEqual(charCount, -1);
+
+            return ref this;
+        }
+
+        if (charCount == -1) charCount = value.Length;
+
+        ArgumentOutOfRangeException.ThrowIfOutOfRange(startIndex, 0, value.Length);
+
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)(startIndex + charCount), (uint)value.Length);
+
+        if (charCount == 0) return ref this;
+
+        Append(value.AsSpan(startIndex, charCount));
 
         return ref this;
     }
@@ -394,7 +594,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="value"> The builder to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Append(Vsb value) => ref Append(value._span[..value._position]);
+    public ref Vsb Append(scoped Vsb value) => ref Append(value._span[..value._position]);
 
     /// <summary>
     ///     Appends a copy of a substring within a specified builder to this instance.
@@ -404,7 +604,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="count"> The number of characters in <paramref name="value"/> to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Append(Vsb value, int startIndex, int count) => ref Append(value._span.Slice(startIndex, count));
+    public ref Vsb Append(scoped Vsb value, int startIndex, int count) => ref Append(value._span.Slice(startIndex, count));
 
     /// <summary>
     ///     Appends the string representation of a specified Boolean value to this instance.
@@ -574,8 +774,7 @@ public ref struct ValueStringBuilder : IDisposable
         if (!OperatingSystem.IsWindows())
             return ref Append('\n');
 
-        if (_position + 1 == _span.Length)
-            Grow(2);
+        EnsureCapacity(checked(_position + 2));
 
         Unsafe.As<char, int>(ref Unsafe.Add(ref MemoryMarshal.GetReference(_span), _position)) = 0x000A000D;
 
@@ -607,7 +806,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="value"> The read-only character span to append. </param>
     /// <returns> A reference to this instance after the append operation is completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendLine(ReadOnlySpan<char> value) => ref Append(value).AppendLine();
+    public ref Vsb AppendLine(scoped ReadOnlySpan<char> value) => ref Append(value).AppendLine();
 
     /// <summary>
     ///     Appends a range of characters to the end of this builder, followed by the default line terminator.
@@ -642,7 +841,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="value"> The builder to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendLine(Vsb value) => ref Append(value).AppendLine();
+    public ref Vsb AppendLine(scoped Vsb value) => ref Append(value).AppendLine();
 
     /// <summary>
     ///     Appends a copy of a substring within a specified builder to this instance, followed by the default line terminator.
@@ -652,7 +851,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="count"> The number of characters in <paramref name="value"/> to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendLine(Vsb value, int startIndex, int count) => ref Append(value, startIndex, count).AppendLine();
+    public ref Vsb AppendLine(scoped Vsb value, int startIndex, int count) => ref Append(value, startIndex, count).AppendLine();
 
     /// <summary>
     ///     Appends the string representation of a specified Boolean value to this instance, followed by the default line terminator.
@@ -794,9 +993,9 @@ public ref struct ValueStringBuilder : IDisposable
     {
         // Typed hotpaths
 
-        if (values is T[] array) return ref AppendJoinCore<T>(in separator, separatorLength, array);
+        if (values is T[] array) return ref AppendJoinCore(in separator, separatorLength, array);
 
-        if (values is List<T> list) return ref AppendJoinCore<T>(in separator, separatorLength, CollectionsMarshal.AsSpan(list));
+        if (values is List<T> list) return ref AppendJoinCore(in separator, separatorLength, CollectionsMarshal.AsSpan(list));
 
         ReadOnlySpan<char> separatorSpan = default; bool useSpan = separatorLength > 1;
         
@@ -812,33 +1011,38 @@ public ref struct ValueStringBuilder : IDisposable
         {
             while (enumerator.MoveNext()) Append(separatorSpan).Append(enumerator.Current);
         }
-        else
+        else if (separatorLength == 1)
         {
             while (enumerator.MoveNext()) Append(separator).Append(enumerator.Current);
+        }
+        else
+        {
+            while (enumerator.MoveNext()) Append(enumerator.Current);
         }
 
         return ref this;
     }
 
     [UnscopedRef]
-    private ref Vsb AppendJoinCore<T>(ref readonly char separator, int separatorLength, ReadOnlySpan<T> values)
+    private ref Vsb AppendJoinCore<T>(ref readonly char separator, int separatorLength, scoped ReadOnlySpan<T> values)
     {
         ReadOnlySpan<char> separatorSpan = default; bool useSpan = separatorLength > 1;
 
         if (useSpan) separatorSpan = MemoryMarshal.CreateReadOnlySpan(in separator, separatorLength);
 
-        if (!values.IsEmpty)
-        {
-            Append(values[0]);
+        Append(values[0]);
 
-            if (useSpan)
-            {
-                for (int i = 1; i < values.Length; i++) Append(separatorSpan).Append(values[i]);
-            }
-            else
-            {
-                for (int i = 1; i < values.Length; i++) Append(separator).Append(values[i]);
-            }
+        if (useSpan)
+        {
+            for (int i = 1; i < values.Length; i++) Append(separatorSpan).Append(values[i]);
+        }
+        else if (separatorLength == 1)
+        {
+            for (int i = 1; i < values.Length; i++) Append(separator).Append(values[i]);
+        }
+        else
+        {
+            for (int i = 1; i < values.Length; i++) Append(values[i]);
         }
 
         return ref this;
@@ -855,6 +1059,8 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb AppendJoin(string? separator, params object?[] values)
     {
+        if (values is null || values.Length == 0) return ref this;
+
         separator ??= string.Empty;
 
         return ref AppendJoinCore(ref GetRawStringData(separator), separator.Length, values);
@@ -867,8 +1073,10 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="values"> A span that contains the strings to concatenate and append to the current instance of the string builder. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendJoin(string? separator, ReadOnlySpan<object?> values)
+    public ref Vsb AppendJoin(string? separator, scoped ReadOnlySpan<object?> values)
     {
+        if (values.IsEmpty) return ref this;
+
         separator ??= string.Empty;
 
         return ref AppendJoinCore(ref GetRawStringData(separator), separator.Length, values);
@@ -898,7 +1106,15 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb AppendJoin(string? separator, params string?[] values)
     {
+        if (values is null || values.Length == 0) return ref this;
+
         separator ??= string.Empty;
+
+        int expansionHint = separator.Length * (values.Length - 2);
+
+        foreach (string? value in values) expansionHint += value?.Length ?? 0;
+
+        EnsureCapacity(expansionHint);
 
         return ref AppendJoinCore(ref GetRawStringData(separator), separator.Length, values);
     }
@@ -910,9 +1126,17 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="values"> A span that contains the strings to concatenate and append to the current instance of the string builder. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendJoin(string? separator, ReadOnlySpan<string?> values)
+    public ref Vsb AppendJoin(string? separator, scoped ReadOnlySpan<string?> values)
     {
+        if (values.IsEmpty) return ref this;
+
         separator ??= string.Empty;
+
+        int expansionHint = separator.Length * (values.Length - 2);
+
+        foreach (string? value in values) expansionHint += value?.Length ?? 0;
+
+        EnsureCapacity(expansionHint);
 
         return ref AppendJoinCore(ref GetRawStringData(separator), separator.Length, values);
     }
@@ -933,7 +1157,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="values"> A span that contains the strings to concatenate and append to the current instance of the string builder. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendJoin(char separator, ReadOnlySpan<object?> values) => ref AppendJoinCore(ref separator, 1, values);
+    public ref Vsb AppendJoin(char separator, scoped ReadOnlySpan<object?> values) => ref AppendJoinCore(ref separator, 1, values);
 
     /// <summary>
     ///     Concatenates and appends the members of a collection, using the specified char separator between each member.
@@ -961,7 +1185,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="values"> A span that contains the strings to concatenate and append to the current instance of the string builder. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb AppendJoin(char separator, ReadOnlySpan<string?> values) => ref AppendJoinCore(ref separator, 1, values);
+    public ref Vsb AppendJoin(char separator, scoped ReadOnlySpan<string?> values) => ref AppendJoinCore(ref separator, 1, values);
 
     #endregion
 
@@ -969,9 +1193,9 @@ public ref struct ValueStringBuilder : IDisposable
 
     private void GrowAndShift(int index, int count)
     {
-        EnsureCapacity(_position + count);
+        EnsureCapacity(checked(_position + count));
 
-        FastCopy(_span[index.._position], _span[(index + count)..]);
+        FastMove(_span[index.._position], _span[(index + count)..]);
 
         _position += count;
     }
@@ -994,11 +1218,19 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="count"> The number of times to insert the string. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Insert(int index, ReadOnlySpan<char> value, int count)
+    public ref Vsb Insert(int index, scoped ReadOnlySpan<char> value, int count)
     {
+        ArgumentOutOfRangeException.ThrowIfOutOfRange(index, 0, _position);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+
         if (count != 0 && value.Length != 0)
         {
+            if (count > int.MaxValue / value.Length)
+                ThrowCapacityTooHigh();
+
             int expansion = value.Length * count;
+
+            value = GetNonOverlappingSpan(value);
 
             GrowAndShift(index, expansion);
 
@@ -1064,6 +1296,8 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Insert(int index, char value)
     {
+        ArgumentOutOfRangeException.ThrowIfOutOfRange(index, 0, _position);
+
         GrowAndShift(index, 1);
 
         _span[index] = value;
@@ -1179,10 +1413,14 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="value"> The value to insert. </param>
     /// <returns> A reference to this instance after the insert operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Insert(int index, ReadOnlySpan<char> value)
+    public ref Vsb Insert(int index, scoped ReadOnlySpan<char> value)
     {
+        ArgumentOutOfRangeException.ThrowIfOutOfRange(index, 0, _position);
+
         if (value.Length != 0)
         {
+            value = GetNonOverlappingSpan(value);
+
             GrowAndShift(index, value.Length);
 
             FastCopy(value, _span[index..]);
@@ -1192,7 +1430,8 @@ public ref struct ValueStringBuilder : IDisposable
     }
 
     [UnscopedRef]
-    private ref Vsb InsertSpanFormattable<T>(int index, T value) where T : ISpanFormattable
+    private ref Vsb InsertSpanFormattable<T>(int index, T value)
+    where T : ISpanFormattable
     {
         Span<char> buffer = stackalloc char[512];
 
@@ -1200,14 +1439,13 @@ public ref struct ValueStringBuilder : IDisposable
         {
             GrowAndShift(index, charsWritten);
 
-            FastCopy(buffer, _span[index..]);
+            FastCopy(buffer[..charsWritten], _span[index..]);
 
             return ref this;
         }
 
         return ref Insert(index, value.ToString().AsSpan());
     }
-
     #endregion
 
     #region Replace(...)
@@ -1228,7 +1466,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="newValue"> The read-only character span to replace <paramref name="oldValue" /> with. </param>
     /// <returns> A reference to this instance with <paramref name="oldValue" /> replaced by <paramref name="newValue" />. </returns>
     [UnscopedRef]
-    public ref Vsb Replace(ReadOnlySpan<char> oldValue, ReadOnlySpan<char> newValue) => ref Replace(oldValue, newValue, 0, Length);
+    public ref Vsb Replace(scoped ReadOnlySpan<char> oldValue, scoped ReadOnlySpan<char> newValue) => ref Replace(oldValue, newValue, 0, Length);
 
     /// <summary>
     ///     Replaces, within a substring of this instance, of a specified string in this instance with another specified string.
@@ -1250,34 +1488,195 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="count"> The number of characters to read in this builder. </param>
     /// <returns> A reference to this instance with <paramref name="oldValue" /> replaced by <paramref name="newValue" /> in the range from <paramref name="startIndex" /> to <paramref name="startIndex" /> + <paramref name="count" /> -1. </returns>
     [UnscopedRef]
-    public ref Vsb Replace(ReadOnlySpan<char> oldValue, ReadOnlySpan<char> newValue, int startIndex, int count)
+    public ref Vsb Replace(scoped ReadOnlySpan<char> oldValue, scoped ReadOnlySpan<char> newValue, int startIndex, int count)
     {
-        int difference = newValue.Length - oldValue.Length, position = startIndex, end = startIndex + count;
+        if (oldValue.Length == 0)
+            return ref this;
 
-        while (position < end)
+        int difference = newValue.Length - oldValue.Length;
+
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)(startIndex + count), (uint)_position);
+
+        oldValue = GetNonOverlappingSpan(oldValue);
+        newValue = GetNonOverlappingSpan(newValue);
+
+        if (difference == 0)
         {
-            int searchLength = end - position, relativeIndex = _span.Slice(position, searchLength).IndexOf(oldValue, StringComparison.Ordinal), absoluteIndex = position + relativeIndex;
+            if (oldValue.Equals(newValue, StringComparison.Ordinal))
+                return ref this;
 
-            if (relativeIndex == -1) break;
+            return ref ReplaceEqualSpan(_span.Slice(startIndex, count), oldValue, newValue);
+        }
 
-            if (difference > 0)
-            {
-                GrowAndShift(absoluteIndex + oldValue.Length, difference);
-                end += difference;
-            }
-            else if (difference < 0)
-            {
-                Remove(absoluteIndex + newValue.Length, -difference);
-                end += difference;
-            }
+        if (difference < 0)
+            return ref ReplaceShorterSpan(oldValue, newValue, startIndex, count);
 
-            FastCopy(newValue, _span[absoluteIndex..]);
+        return ref ReplaceLongerSpan(oldValue, newValue, startIndex, count);
+    }
 
-            position = absoluteIndex + newValue.Length;
+    #region Replace
+
+    // oldValue == newValue
+    [UnscopedRef]
+    private ref Vsb ReplaceEqualSpan(scoped Span<char> span, scoped ReadOnlySpan<char> oldValue, scoped ReadOnlySpan<char> newValue)
+    {
+        uint bytes = (uint)(newValue.Length * sizeof(char));
+        int oldLength = oldValue.Length;
+
+        ref char source = ref MemoryMarshal.GetReference(newValue);
+
+        int offset = 0;
+
+        while (true)
+        {
+            int index = span[offset..].IndexOf(oldValue);
+
+            if (index < 0)
+                break;
+
+            index += offset;
+
+            ref char destination = ref MemoryMarshal.GetReference(span[index..]);
+
+            Unsafe.CopyBlockUnaligned(ref Unsafe.As<char, byte>(ref destination), ref Unsafe.As<char, byte>(ref source), bytes);
+
+            offset = index + oldLength;
         }
 
         return ref this;
     }
+
+
+    // oldValue > newValue
+    [UnscopedRef]
+    private ref Vsb ReplaceShorterSpan(scoped ReadOnlySpan<char> oldValue, scoped ReadOnlySpan<char> newValue, int startIndex, int count)
+    {
+        Span<char> span = _span.Slice(startIndex, count);
+
+        int read = 0, write = 0;
+
+        while (true)
+        {
+            int match = span[read..].IndexOf(oldValue);
+
+            if (match < 0)
+            {
+                // Copy the final unchanged region.
+                int remaining = count - read;
+
+                if (remaining != 0 && read != write)
+                    span.Slice(read, remaining).CopyTo(span.Slice(write, remaining));
+
+                write += remaining;
+                break;
+            }
+
+            match += read;
+
+            // Copy the unchanged region before the match.
+            int unchanged = match - read;
+
+            if (unchanged != 0 && read != write)
+                span.Slice(read, unchanged).CopyTo(span.Slice(write, unchanged));
+
+            write += unchanged;
+
+            FastCopy(newValue, span.Slice(write, newValue.Length));
+
+            read = match + oldValue.Length;
+            write += newValue.Length;
+        }
+
+        int removed = count - write;
+
+        if (removed == 0)
+            return ref this;
+
+        // The range after the replacement region must move left once.
+        int tailStart = startIndex + count, tailLength = _position - tailStart;
+
+        if (tailLength != 0)
+            _span.Slice(tailStart, tailLength).CopyTo(_span.Slice(startIndex + write, tailLength));
+
+        _position -= removed;
+
+        return ref this;
+    }
+
+
+    // newValue > oldValue
+    [UnscopedRef]
+    private ref Vsb ReplaceLongerSpan(scoped ReadOnlySpan<char> oldValue, scoped ReadOnlySpan<char> newValue, int startIndex, int count)
+    {
+        int difference = newValue.Length - oldValue.Length, end = startIndex + count;
+
+        // First pass: count matches.
+        int matches = 0, read = startIndex;
+
+        while (read < end)
+        {
+            int match = _span[read..end].IndexOf(oldValue);
+
+            if (match < 0)
+                break;
+
+            read += match + oldValue.Length;
+            matches++;
+        }
+
+        if (matches == 0)
+            return ref this;
+
+        // Handle the required expansion once.
+        int growth = checked(matches * difference);
+
+        EnsureCapacity(checked(_position + growth));
+
+        int tailLength = _position - end;
+
+        if (tailLength != 0)
+            _span.Slice(end, tailLength).CopyTo(_span.Slice(end + growth, tailLength));
+
+        _position += growth;
+
+        Span<char> span = _span.Slice(startIndex, count + growth);
+
+        // Rewrite from the end so that the expanded destination never overwrites source data that has not yet been consumed.
+        int sourceEnd = count, destinationEnd = sourceEnd + growth;
+
+        while (sourceEnd != 0)
+        {
+            int match = span[..sourceEnd].LastIndexOf(oldValue);
+
+            if (match < 0)
+            {
+                // Everything before the first match.
+                span[..sourceEnd].CopyTo(span.Slice(destinationEnd - sourceEnd, sourceEnd));
+
+                break;
+            }
+
+            int matchEnd = match + oldValue.Length;
+
+            // Move the unchanged suffix preceding our already-written destination.
+            int suffixLength = sourceEnd - matchEnd;
+
+            destinationEnd -= suffixLength;
+
+            if (suffixLength != 0)
+                span.Slice(matchEnd, suffixLength).CopyTo(span.Slice(destinationEnd, suffixLength));
+
+            destinationEnd -= newValue.Length;
+
+            FastCopy(newValue, span.Slice(destinationEnd, newValue.Length));
+
+            sourceEnd = match;
+        }
+
+        return ref this;
+    }
+
+    #endregion
 
     /// <summary>
     ///     Replaces all occurrences of a specified character in this instance with another specified character.
@@ -1299,6 +1698,11 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Replace(char oldChar, char newChar, int startIndex, int count)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(startIndex);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+
+        ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)(startIndex + count), (uint)_position);
+
         _span.Slice(startIndex, count).Replace(oldChar, newChar);
 
         return ref this;
@@ -1310,18 +1714,15 @@ public ref struct ValueStringBuilder : IDisposable
 
     #pragma warning disable IDE0060
 
-    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.AggressiveInlining)]
-    private static void Copy(ref Vsb source, ref Vsb dest) => dest = source;
-
     /// <summary>
     ///     Appends the specified interpolated string to this instance.
     /// </summary>
     /// <param name="handler"> The interpolated string to append. </param>
     /// <returns> A reference to this instance after the append operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Append([InterpolatedStringHandlerArgument(""), UnscopedRef] ref AppendInterpolatedStringHandler handler)
+    public ref Vsb Append([InterpolatedStringHandlerArgument("")] ref AppendInterpolatedStringHandler handler)
     {
-        Copy(ref handler._stringBuilder, ref this);
+        this = handler._stringBuilder;
 
         return ref this;
     }
@@ -1335,7 +1736,7 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Append(IFormatProvider? provider, [InterpolatedStringHandlerArgument("", nameof(provider))] ref AppendInterpolatedStringHandler handler)
     {
-        Copy(ref handler._stringBuilder, ref this);
+        this = handler._stringBuilder;
 
         return ref this;
     }
@@ -1348,7 +1749,7 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb AppendLine([InterpolatedStringHandlerArgument("")] ref AppendInterpolatedStringHandler handler)
     {
-        Copy(ref handler._stringBuilder, ref this);
+        this = handler._stringBuilder;
 
         return ref AppendLine();
     }
@@ -1362,7 +1763,7 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb AppendLine(IFormatProvider? provider, [InterpolatedStringHandlerArgument("", nameof(provider))] ref AppendInterpolatedStringHandler handler)
     {
-        Copy(ref handler._stringBuilder, ref this);
+        this = handler._stringBuilder;
 
         return ref AppendLine();
     }
@@ -1494,14 +1895,15 @@ public ref struct ValueStringBuilder : IDisposable
                 }
                 else if (value is ISpanFormattable spanFormattable)
                 {
-                    if (spanFormattable.TryFormat(_stringBuilder.AppendTarget, out int charsWritten, format, _provider)) // constrained call avoiding boxing for value types
+                    if (!spanFormattable.TryFormat(_stringBuilder.AppendTarget, out int charsWritten, format, _provider))
                     {
-                        _stringBuilder.Length += charsWritten;
+                        while (!spanFormattable.TryFormat(_stringBuilder.AppendTarget, out charsWritten, format, _provider))
+                        {
+                            if (!_stringBuilder.GrowCapacity()) ThrowCapacityTooHigh();
+                        }
                     }
-                    else
-                    {
-                        _stringBuilder.Append(spanFormattable.ToString(format, _provider));
-                    }
+
+                    _stringBuilder._position += charsWritten;
                 }
                 else
                 {
@@ -1551,7 +1953,7 @@ public ref struct ValueStringBuilder : IDisposable
             {
                 DefaultInterpolatedStringHandler handler = new(0, 0, _provider, stackalloc char[512]);
                 handler.AppendFormatted(value, format);
-                AppendFormatted(handler.Text.ToString(), alignment);
+                AppendFormatted(handler.Text, alignment);
                 handler.Clear();
             }
         }
@@ -1572,7 +1974,7 @@ public ref struct ValueStringBuilder : IDisposable
         /// <param name="value"> The span to write. </param>
         /// <param name="alignment"> Minimum number of characters that should be written for this value. If the value is negative, it indicates left-aligned and the required minimum is the absolute value. </param>
         /// <param name="format"> The format string. </param>
-        public void AppendFormatted(ReadOnlySpan<char> value, int alignment = 0, string? format = null)
+        public void AppendFormatted(scoped ReadOnlySpan<char> value, int alignment = 0, string? format = null)
         {
             if (alignment == 0)
             {
