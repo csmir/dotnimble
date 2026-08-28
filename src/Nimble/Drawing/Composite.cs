@@ -12,10 +12,16 @@ namespace Nimble.Drawing;
 /// </remarks>
 [StructLayout(LayoutKind.Explicit)]
 [DebuggerDisplay("R = {R}, G = {G}, B = {B}, A = {A}")]
-public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<Composite>, IComparable<Composite>, ICloneable
+public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composite>, IComparable<Composite>, ICloneable
 {
     #region Constants
-    
+
+    // An 8-bit channel has only 256 possible values, so both sRGB transfer functions are tabulated
+    // once at type-load instead of evaluating a Pow per channel on every single conversion.
+    private static readonly float[] VLINEAR_LUT = BuildTransferTable(linearize: true);
+    private static readonly float[] GAMMA_LUT = BuildTransferTable(linearize: false);
+
+
     const float
         REC_709_R = 0.2126f,
         REC_709_G = 0.7152f,
@@ -42,50 +48,42 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         CIE_LSTAR_CUBEROOT_FACTOR = 1f / 3f,
         CIE_LSTAR_OFFSET = 16f;
 
-    const int
-        ZCURVE_SHIFT12 = 00014000377,
-        ZCURVE_SHIFT08 = 00014170017,
-        ZCURVE_SHIFT04 = 00303030303,
-        ZCURVE_SHIFT02 = 01111111111;
+    // CIE D65 white point (2 degree standard observer), used to normalize XYZ before CIE-LAB.
+    const float
+        D65_XN = 0.950489f,
+        D65_YN = 1f,
+        D65_ZN = 1.088840f;
 
+    // Morton (Z-order) bit-spreading masks for 10-bit lanes. C# has no octal literals, so these
+    // are written in hexadecimal.
+    const int
+        ZCURVE_SHIFT16 = 0x030000FF,
+        ZCURVE_SHIFT08 = 0x0300F00F,
+        ZCURVE_SHIFT04 = 0x030C30C3,
+        ZCURVE_SHIFT02 = 0x09249249;
+
+    // CFACTOR is the number of bands each component of a composite sort index is quantized into.
     const int
         CFACTOR = 8,
         MAX_DEGREES = 360;
 
+    // Bits per axis for the OKLAB Hilbert lattice. Three axes at 10 bits fill a 30-bit index.
+    const int HILBERT_BITS = 10;
+
+    // Extent of the sRGB gamut in OKLAB. Coordinates are clamped into this box before they are
+    // quantized, so values marginally outside it are folded onto the edge rather than wrapping.
+    const float
+        OKLAB_L_MIN = 0f, OKLAB_L_MAX = 1f,
+        OKLAB_A_MIN = -0.234f, OKLAB_A_MAX = 0.277f,
+        OKLAB_B_MIN = -0.312f, OKLAB_B_MAX = 0.199f;
+
+    // The visible spectrum, mapped so that hue 0 (red) sits at the long-wavelength end.
+    const float
+        WAVELENGTH_MAX_NM = 650f,
+        WAVELENGTH_MIN_NM = 400f,
+        WAVELENGTH_HUE_SPAN = 270f;
+
     #endregion
-
-#if NET6_0_OR_GREATER
-    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "Value")]
-    private static extern ref long GetValue(Color @this);
-#endif
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct SystemColor
-    {
-        /// <summary>
-        ///     string? System.Drawing.Color.name. Because its a string, it can be set to 0 in an nint to fit in the same memory.
-        /// </summary>
-        //[FieldOffset(0)]
-        public nint Name;
-
-        /// <summary>
-        ///     long? System.Drawing.Color.value. This is the value that has equality to Colr.Value.
-        /// </summary>
-        //[FieldOffset(8)]
-        public long Value;
-
-        /// <summary>
-        ///     short System.Drawing.Color.knownColor, but it can be set to 0 in a short to fit in the same memory.
-        /// </summary>
-        //[FieldOffset(16)]
-        public short KnownColor;
-
-        /// <summary>
-        ///     short System.Drawing.Color.state. This is the value that has to be set to 0x0002 for the Color to be valid when using the Value field.
-        /// </summary>
-        //[FieldOffset(18)]
-        public short State;
-    }
 
     /// <summary>
     ///     The 32-bit unsigned integer representation of the colour.
@@ -157,15 +155,20 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     {
         A = byte.MaxValue;
 
-        var hi = Convert.ToInt32(Math.Floor(h / 60)) % 6;
-        var f = h / 60 - Math.Floor(h / 60);
+        var sector = (int)(h / 60f);
+        var f = (h / 60f) - sector;
+
+        // Wrap into [0,6) so that a hue at or beyond 360 degrees cannot index off the end.
+        var hi = ((sector % 6) + 6) % 6;
 
         v *= byte.MaxValue;
 
-        var b = Convert.ToByte(v);
-        var p = Convert.ToByte(v * (1 - s));
-        var q = Convert.ToByte(v * (1 - f * s));
-        var t = Convert.ToByte(v * (1 - (1 - f) * s));
+        // Convert.ToByte throws on any value that drifts a fraction outside [0,255] and rounds
+        // through a call; ToByte clamps and rounds inline instead.
+        var b = ToByte(v);
+        var p = ToByte(v * (1 - s));
+        var q = ToByte(v * (1 - (f * s)));
+        var t = ToByte(v * (1 - ((1 - f) * s)));
 
         switch (hi)
         {
@@ -192,54 +195,56 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
 
     private Composite(float h, float s, float l, float a = 1f)
     {
-        A = (byte)(a * byte.MaxValue);
+        A = ToChannel(a);
 
-        var c = (1 - Math.Abs(2 * l - 1)) * s;
-        var x = c * (1 - Math.Abs((h / 60) % 2 - 1));
-        var m = l - c / 2;
+        var c = (1 - Math.Abs((2 * l) - 1)) * s;
+        var x = c * (1 - Math.Abs(((h / 60) % 2) - 1));
+        var m = l - (c / 2);
 
-        byte r, g, b;
+        // The chroma components stay in the normalized [0,1] domain so that the lightness offset
+        // is applied before the single rounding step, rather than truncating twice.
+        float r, g, b;
 
         if (h < 60)
         {
-            r = (byte)(c * byte.MaxValue);
-            g = (byte)(x * byte.MaxValue);
-            b = 0;
+            r = c;
+            g = x;
+            b = 0f;
         }
         else if (h < 120)
         {
-            r = (byte)(x * byte.MaxValue);
-            g = (byte)(c * byte.MaxValue);
-            b = 0;
+            r = x;
+            g = c;
+            b = 0f;
         }
         else if (h < 180)
         {
-            r = 0;
-            g = (byte)(c * byte.MaxValue);
-            b = (byte)(x * byte.MaxValue);
+            r = 0f;
+            g = c;
+            b = x;
         }
         else if (h < 240)
         {
-            r = 0;
-            g = (byte)(x * byte.MaxValue);
-            b = (byte)(c * byte.MaxValue);
+            r = 0f;
+            g = x;
+            b = c;
         }
         else if (h < 300)
         {
-            r = (byte)(x * byte.MaxValue);
-            g = 0;
-            b = (byte)(c * byte.MaxValue);
+            r = x;
+            g = 0f;
+            b = c;
         }
         else
         {
-            r = (byte)(c * byte.MaxValue);
-            g = 0;
-            b = (byte)(x * byte.MaxValue);
+            r = c;
+            g = 0f;
+            b = x;
         }
 
-        R = (byte)(r + m * byte.MaxValue);
-        G = (byte)(g + m * byte.MaxValue);
-        B = (byte)(b + m * byte.MaxValue);
+        R = ToChannel(r + m);
+        G = ToChannel(g + m);
+        B = ToChannel(b + m);
     }
 
     #endregion
@@ -258,7 +263,11 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     ///     Gets the Rec. 709 relative luminance for the current color, 
     ///     applying the Luma coefficient without linearization.
     /// </summary>
-    /// <returns>Relative luminance in accordance to Rec. 709 coefficients.</returns>
+    /// <remarks>
+    ///     The result spans the 0-255 range of the input channels and is gamma-encoded. 
+    ///     For the linearized 0-1 luminance that WCAG and the CIE color spaces expect, use <see cref="GetLuminosity"/> instead.
+    /// </remarks>
+    /// <returns>Relative luminance in accordance to Rec. 709 coefficients, in the 0-255 range.</returns>
     public float GetRelativeLuminance()
         => (REC_709_R * R)
          + (REC_709_G * G)
@@ -275,30 +284,35 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     /// <summary>
     ///     Gets the perceived brightness of the current color according to the HSP color model using the BT.601 coefficients.
     /// </summary>
-    /// <returns>Perceived brightness in accordance to BT.601 coefficients.</returns>
+    /// <remarks>
+    ///     The result spans the 0-255 range of the input channels, unlike <see cref="GetPerceivedLightness"/> which spans 0-100.
+    /// </remarks>
+    /// <returns>Perceived brightness in accordance to BT.601 coefficients, in the 0-255 range.</returns>
     public float GetPerceivedBrightness()
-        => (float)Math.Sqrt(
-            BT_601_R * Math.Pow(R, 2) +
-            BT_601_G * Math.Pow(G, 2) +
-            BT_601_B * Math.Pow(B, 2)
+        => Sqrt(
+            (BT_601_R * R * R) +
+            (BT_601_G * G * G) +
+            (BT_601_B * B * B)
         );
 
     /// <summary>
     ///     Gets the wavelength of the color based on its hue, 
-    ///     mapping the hue range (0-360) to a wavelength range (400-700 nm) in the visible spectrum.
+    ///     mapping the hue range (0-270) onto the visible spectrum (650-400 nm), so that hue 0 (red) 
+    ///     sits at the long-wavelength end and hue 270 (violet) at the short-wavelength end. 
+    ///     Hues above 270 (the magentas) are extra-spectral and extrapolate below 400 nm.
     /// </summary>
-    /// <returns>The combined wavelength of the color in the visible spectrum.</returns>
+    /// <returns>The combined wavelength of the color in the visible spectrum, in nanometres.</returns>
     public float GetCombinedWavelength()
-        => 400 / 270 * GetHue();
+        => WAVELENGTH_MAX_NM - ((WAVELENGTH_MAX_NM - WAVELENGTH_MIN_NM) / WAVELENGTH_HUE_SPAN * GetHue());
 
     /// <summary>
     ///     Gets the gamma-corrected (TRC) luminance of the color using BT.601 coefficients.
     /// </summary>
     /// <returns>The gamma-corrected luminance of the color.</returns>
     public float GetTransferCurve()
-        => BT_601_R * Gamma(R)
-         + BT_601_G * Gamma(G)
-         + BT_601_B * Gamma(B);
+        => GammaCore((BT_601_R * VLinear(R))
+                   + (BT_601_G * VLinear(G))
+                   + (BT_601_B * VLinear(B)));
 
     /// <summary>
     ///     Gets a Z-order value for the color by interleaving the bits of the RGB channels, 
@@ -316,32 +330,9 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     /// <returns>The hue of the current color.</returns>
     public float GetHue()
     {
-        if (IsRGBEquals())
-            return 0f;
-
         GetMinMax(out var min, out var max);
 
-        float delta = max - min;
-        float hue;
-
-        int r, g, b;
-
-        r = R;
-        g = G;
-        b = B;
-
-        if (r == max)
-            hue = (g - b) / delta;
-        else if (g == max)
-            hue = (b - r) / delta + 2f;
-        else
-            hue = (r - g) / delta + 4f;
-
-        hue *= 60f;
-        if (hue < 0f)
-            hue += 360f;
-
-        return hue;
+        return Hue(min, max);
     }
 
     /// <summary>
@@ -353,17 +344,9 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     /// <returns>The saturation of the current color.</returns>
     public float GetSaturation()
     {
-        if (IsRGBEquals())
-            return 0f;
-
         GetMinMax(out var min, out var max);
 
-        var div = max + min;
-
-        if (div > byte.MaxValue)
-            div = byte.MaxValue * 2 - max - min;
-
-        return (max - min) / (float)div;
+        return Saturation(min, max);
     }
 
     /// <summary>
@@ -377,7 +360,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     {
         GetMinMax(out var min, out var max);
 
-        return (max + min) / (byte.MaxValue * 2f);
+        return Brightness(min, max);
     }
 
     /// <summary>
@@ -387,9 +370,11 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     /// <returns>The contrast ratio between the two colors, where a higher value indicates greater contrast.</returns>
     public double GetContrastRatio(Composite o)
     {
-        var l1 = GetRelativeLuminance();
+        // WCAG defines the ratio over linearized luminance in the [0,1] range, which is what
+        // GetLuminosity produces. GetRelativeLuminance is gamma-encoded and spans [0,255].
+        var l1 = GetLuminosity();
 
-        var l2 = o.GetRelativeLuminance();
+        var l2 = o.GetLuminosity();
 
         return (Math.Max(l1, l2) + 0.05) / (Math.Min(l1, l2) + 0.05);
     }
@@ -409,7 +394,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         // get euclidean distance between the two colors in RGB space
         // https://en.wikipedia.org/wiki/Color_difference#sRGB
 
-        return Math.Sqrt(Math.Pow(deltaR, 2) + Math.Pow(deltaG, 2) + Math.Pow(deltaB, 2));
+        return Math.Sqrt((deltaR * deltaR) + (deltaG * deltaG) + (deltaB * deltaB));
     }
 
     /// <summary>
@@ -433,7 +418,9 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         var deltaA = a1 - a2;
         var deltaB = b1 - b2;
 
-        return Math.Sqrt(Math.Pow(deltaL, 2) + Math.Pow(deltaA, 2) + Math.Pow(deltaB, 2));
+        return Math.Sqrt(((double)deltaL * deltaL)
+                       + ((double)deltaA * deltaA)
+                       + ((double)deltaB * deltaB));
     }
 
     /// <summary>
@@ -458,10 +445,11 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     /// <returns>A new <see cref="Composite"/> value that is the gamma-corrected value of the current color.</returns>
     public Composite GetGammaCorrectedColor()
     {
+        // Gamma operates on the [0,1] range, so the channels are normalized before encoding.
         return new(
-            (byte)(Clamp(Gamma(R), 0, 1) * byte.MaxValue),
-            (byte)(Clamp(Gamma(G), 0, 1) * byte.MaxValue),
-            (byte)(Clamp(Gamma(B), 0, 1) * byte.MaxValue),
+            ToChannel(Gamma(R)),
+            ToChannel(Gamma(G)),
+            ToChannel(Gamma(B)),
             A
         );
     }
@@ -482,6 +470,8 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
                 => GetHLVInvertedIndex(indexType is CompositeIndex.HLV1DInverted),
             CompositeIndex.HSV
                 => GetHSVIndex(),
+            CompositeIndex.HueHilbert
+                => GetHueHilbertIndex(),
             _ => throw new ArgumentException("Invalid index type.", nameof(indexType)),
         };
     }
@@ -546,14 +536,22 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     /// </summary>
     /// <returns>A <see cref="ValueTuple{T1, T2, T3}"/> containing H, S, L.</returns>
     public (float H, float S, float L) GetHSL()
-        => (GetHue(), GetSaturation(), GetBrightness());
+    {
+        GetMinMax(out var min, out var max);
+
+        return (Hue(min, max), Saturation(min, max), Brightness(min, max));
+    }
 
     /// <summary>
     ///     Gets the HSLA color space representation of the current value as H, S, L, A.
     /// </summary>
     /// <returns>A <see cref="ValueTuple{T1, T2, T3, T4}"/> containing H, S, L, A.</returns>
     public (float H, float S, float L, float A) GetHSLA()
-        => (GetHue(), GetSaturation(), GetBrightness(), A / 255f);
+    {
+        GetMinMax(out var min, out var max);
+
+        return (Hue(min, max), Saturation(min, max), Brightness(min, max), A / 255f);
+    }
 
     /// <summary>
     ///     Gets the minimum value among the RGB channels of the color.
@@ -686,7 +684,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     }
 
     /// <summary>
-    ///     Takes the current saturation value and adds or removes the specified amount to it, returning a new <see cref="Composite"/> with the modified saturation value. The resulting saturation value is wrapped around the 0-1 range.
+    ///     Takes the current saturation value and adds or removes the specified amount to it, returning a new <see cref="Composite"/> with the modified saturation value. The resulting saturation value is clamped to the 0-1 range.
     /// </summary>
     /// <param name="amount"></param>
     /// <returns>A new <see cref="Composite"/> value with the included mutation.</returns>
@@ -696,18 +694,13 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         ArgumentOutOfRangeException.ThrowIfOutOfRange(amount, -1f, 1f, nameof(amount));
 
         var hsla = GetHSLA();
-        hsla.S = (hsla.S + amount) % 1f;
-
-        if (hsla.S < 0)
-            hsla.S += 1f;
-        else if (hsla.S > 1f)
-            hsla.S -= 1f;
+        hsla.S = Clamp(hsla.S + amount, 0f, 1f);
 
         return new Composite(hsla.H, hsla.S, hsla.L, hsla.A);
     }
 
     /// <summary>
-    ///     Takes the current saturation value and sets it to the specified value, returning a new <see cref="Composite"/> with the modified saturation value. The resulting saturation value is wrapped around the 0-1 range.
+    ///     Takes the current saturation value and sets it to the specified value, returning a new <see cref="Composite"/> with the modified saturation value. The resulting saturation value is clamped to the 0-1 range.
     /// </summary>
     /// <param name="value"></param>
     /// <returns>A new <see cref="Composite"/> value with the included mutation.</returns>
@@ -717,18 +710,13 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         ArgumentOutOfRangeException.ThrowIfOutOfRange(value, -1f, 1f, nameof(value));
 
         var hsla = GetHSLA();
-        hsla.S = value % 1f;
-
-        if (hsla.S < 0)
-            hsla.S += 1f;
-        else if (hsla.S > 1f)
-            hsla.S -= 1f;
+        hsla.S = Clamp(value, 0f, 1f);
 
         return new Composite(hsla.H, hsla.S, hsla.L, hsla.A);
     }
 
     /// <summary>
-    ///     Takes the current brightness value and adds or removes the specified amount to it, returning a new <see cref="Composite"/> with the modified lightness value. The resulting lightness value is wrapped around the 0-1 range.
+    ///     Takes the current brightness value and adds or removes the specified amount to it, returning a new <see cref="Composite"/> with the modified lightness value. The resulting lightness value is clamped to the 0-1 range.
     /// </summary>
     /// <param name="amount"></param>
     /// <returns>A new <see cref="Composite"/> value with the included mutation.</returns>
@@ -738,18 +726,13 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         ArgumentOutOfRangeException.ThrowIfOutOfRange(amount, -1f, 1f, nameof(amount));
 
         var hsla = GetHSLA();
-        hsla.L = (hsla.L + amount) % 1f;
-
-        if (hsla.L < 0)
-            hsla.L += 1f;
-        else if (hsla.L > 1f)
-            hsla.L -= 1f;
+        hsla.L = Clamp(hsla.L + amount, 0f, 1f);
 
         return new Composite(hsla.H, hsla.S, hsla.L, hsla.A);
     }
 
     /// <summary>
-    ///     Takes the current brightness value and sets it to the specified value, returning a new <see cref="Composite"/> with the modified lightness value. The resulting lightness value is wrapped around the 0-1 range.
+    ///     Takes the current brightness value and sets it to the specified value, returning a new <see cref="Composite"/> with the modified lightness value. The resulting lightness value is clamped to the 0-1 range.
     /// </summary>
     /// <param name="value"></param>
     /// <returns>A new <see cref="Composite"/> value with the included mutation.</returns>
@@ -759,12 +742,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         ArgumentOutOfRangeException.ThrowIfOutOfRange(value, -1f, 1f, nameof(value));
 
         var hsla = GetHSLA();
-        hsla.L = value % 1f;
-
-        if (hsla.L < 0)
-            hsla.L += 1f;
-        else if (hsla.L > 1f)
-            hsla.L -= 1f;
+        hsla.L = Clamp(value, 0f, 1f);
 
         return new Composite(hsla.H, hsla.S, hsla.L, hsla.A);
     }
@@ -774,15 +752,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     /// </summary>
     /// <returns>A new <see cref="Color"/> created from the sRGB value of this <see cref="Composite"/>.</returns>
     public Color ToColor()
-    {
-        var systemColor = new SystemColor
-        {
-            Value = Value,
-            State = 0x0002 // Refer to System.Drawing.Color.StateARGBValueValid.
-        };
-
-        return *(Color*)&systemColor;
-    }
+        => Color.FromArgb(unchecked((int)Value));
 
     /// <summary>
     ///     Checks equality to another object.
@@ -862,7 +832,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
                 {
                     var (h, s, l, a) = GetHSLA();
 
-                    return $"hsla({h}, {s}, {l}, {a}";
+                    return $"hsla({h}, {s}, {l}, {a})";
                 }
             case CompositeFormat.HSV:
                 {
@@ -894,7 +864,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
                 }
             case CompositeFormat.HEX:
                 {
-                    return $"#{GetOrderedRGBA():X8}";
+                    return $"#{R:X2}{G:X2}{B:X2}{A:X2}";
                 }
             default:
                 throw new ArgumentException("Invalid color format", nameof(format));
@@ -926,9 +896,50 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
             min = B;
     }
 
+    // Hue from an already-computed min/max pair. min == max means R == G == B, which is achromatic.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private bool IsRGBEquals()
-        => R == G && G == B;
+    private float Hue(int min, int max)
+    {
+        if (min == max)
+            return 0f;
+
+        float delta = max - min;
+        float hue;
+
+        if (R == max)
+            hue = (G - B) / delta;
+        else if (G == max)
+            hue = ((B - R) / delta) + 2f;
+        else
+            hue = ((R - G) / delta) + 4f;
+
+        hue *= 60f;
+
+        if (hue < 0f)
+            hue += MAX_DEGREES;
+
+        return hue;
+    }
+
+    // HSL saturation from an already-computed min/max pair.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Saturation(int min, int max)
+    {
+        if (min == max)
+            return 0f;
+
+        var div = max + min;
+
+        if (div > byte.MaxValue)
+            div = (byte.MaxValue * 2) - max - min;
+
+        return (max - min) / (float)div;
+    }
+
+    // HSL lightness from an already-computed min/max pair.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Brightness(int min, int max)
+        => (max + min) / (byte.MaxValue * 2f);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void GetXYZ(out float x, out float y, out float z)
@@ -940,7 +951,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         GetOKLAB(out var lS, out var aS, out var bS);
 
         l = lS;
-        c = (float)Math.Sqrt(aS * aS + bS * bS);
+        c = Sqrt((aS * aS) + (bS * bS));
         h = (float)(Math.Atan2(bS, aS) * (180 / Math.PI));
 
         if (h < 0)
@@ -950,20 +961,24 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void GetOKLAB(out float l, out float a, out float b)
     {
-        GetXYZ(out var x, out var y, out var z);
+        var rL = VLinear(R);
+        var gL = VLinear(G);
+        var bL = VLinear(B);
 
-        // https://bottosson.github.io/posts/oklab/#converting-from-xyz-to-oklab
-        var lS = 0.8189330101f * x + 0.3618667424f * y - 0.1288597137f * z;
-        var mS = 0.0329845436f * x + 0.9293118715f * y + 0.0361456387f * z;
-        var sS = 0.0482003018f * x + 0.2643662691f * y + 0.6338517070f * z;
+        // Linear sRGB straight to LMS, skipping the intermediate XYZ round trip.
+        // https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab
+        var lS = (0.4122214708f * rL) + (0.5363325363f * gL) + (0.0514459929f * bL);
+        var mS = (0.2119034982f * rL) + (0.6806995451f * gL) + (0.1073969566f * bL);
+        var sS = (0.0883024619f * rL) + (0.2817188376f * gL) + (0.6299787005f * bL);
 
-        var lS3 = lS * lS * lS;
-        var mS3 = mS * mS * mS;
-        var sS3 = sS * sS * sS;
+        // The non-linearity here is a cube root, not a cube.
+        var lC = Cbrt(lS);
+        var mC = Cbrt(mS);
+        var sC = Cbrt(sS);
 
-        l = (lS3 * 0.2104542553f) + (mS3 * 0.7936177850f) - (sS3 * 0.0040720468f);
-        a = (lS3 * 1.9779984951f) - (mS3 * 2.4285922050f) + (sS3 * 0.4505937099f);
-        b = (lS3 * 0.0259040371f) + (mS3 * 0.7827717662f) - (sS3 * 0.8086757660f);
+        l = (lC * 0.2104542553f) + (mC * 0.7936177850f) - (sC * 0.0040720468f);
+        a = (lC * 1.9779984951f) - (mC * 2.4285922050f) + (sC * 0.4505937099f);
+        b = (lC * 0.0259040371f) + (mC * 0.7827717662f) - (sC * 0.8086757660f);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -971,11 +986,12 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     {
         GetXYZ(out var x, out var y, out var z);
 
-        var xS = LStar(x);
-        var yS = LStar(y);
-        var zS = LStar(z);
+        // XYZ has to be normalized against the D65 white point before f() is applied.
+        var xS = LabF(x / D65_XN);
+        var yS = LabF(y / D65_YN);
+        var zS = LabF(z / D65_ZN);
 
-        l = yS;
+        l = (116f * yS) - CIE_LSTAR_OFFSET;
         a = 500f * (xS - yS);
         b = 200f * (yS - zS);
     }
@@ -985,20 +1001,9 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     {
         GetMinMax(out var min, out var max);
 
-        h = GetHue();
+        h = Hue(min, max);
         s = (max == 0) ? 0f : 1f - (1f * min / max);
         v = max / 255f;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private uint GetOrderedRGBA()
-    {
-        var r = (uint)R;
-        var g = (uint)G << 8;
-        var b = (uint)B << 16;
-        var a = (uint)A << 24;
-
-        return r | g | b | a;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1019,7 +1024,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private float Clamp(float value, float minValue, float maxValue)
+    private static float Clamp(float value, float minValue, float maxValue)
     {
         if (value < minValue)
             return minValue;
@@ -1027,6 +1032,26 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
             return maxValue;
         
         return value;
+    }
+
+    // Converts a normalized [0,1] channel to its 8-bit representation, rounding rather than
+    // truncating so that round trips through the float color spaces stay stable.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static byte ToChannel(float value)
+        => ToByte(value * byte.MaxValue);
+
+    // Rounds and clamps a [0,255] value to a channel. Unlike Convert.ToByte this never throws on
+    // a value that drifts marginally outside the range through floating point error.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static byte ToByte(float value)
+    {
+        if (value <= 0f)
+            return byte.MinValue;
+
+        if (value >= byte.MaxValue)
+            return byte.MaxValue;
+
+        return (byte)(value + 0.5f);
     }
 
     #endregion
@@ -1041,34 +1066,63 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     // Returns X, Y, Z in range [0,1].
     private static void CIEXYZ(float rL, float gL, float bL, out float x, out float y, out float z)
     {
-        x = (rL * 0.4124564f) + (gL * 0.2126729f) + (bL * 0.0193339f);
+        x = (rL * 0.4124564f) + (gL * 0.3575761f) + (bL * 0.1804375f);
         y = (rL * 0.2126729f) + (gL * 0.7151522f) + (bL * 0.0721750f);
-        z = (rL * 0.0193339f) + (gL * 0.0721750f) + (bL * 0.9503041f);
+        z = (rL * 0.0193339f) + (gL * 0.1191920f) + (bL * 0.9503041f);
     }
 
-    // Gets gamma-corrected value from linear RGB channel.
-    // C is in range [0,1].
+    // Gets gamma-corrected (sRGB encoded) value from a linear value.
+    // L is in range [0,1].
     // Returns gamma-corrected value in range [0,1].
-    private static float Gamma(float L)
+    private static float GammaCore(float L)
     {
         if (L <= GAMMA_2_2_THRESHOLD)
             return L * LINEAR_UPPERFACTOR;
 
-        return (LINEAR_LOWERFACTOR * (float)Math.Pow(L, 1 / LINEAR_GAMMACOEFFICIENT)) - LINEAR_INNERCURVE;
+        return (LINEAR_LOWERFACTOR * Pow(L, 1 / LINEAR_GAMMACOEFFICIENT)) - LINEAR_INNERCURVE;
     }
 
-    // Gets linearized value from sRGB channel.
-    // C is in range [0,255]
-    // Returns linear value in range [0,1]S
-    private static float VLinear(float C)
+    // Runs exactly once per table, so the exact double-precision form of each curve is used here
+    // rather than the single-precision one the hot path would otherwise have paid for.
+    private static float[] BuildTransferTable(bool linearize)
     {
-        var v = C / 255f;
+        var table = new float[256];
 
-        if (v <= SRGBLINEAR_THRESHOLD)
-            return v / LINEAR_UPPERFACTOR;
+        for (var i = 0; i < table.Length; i++)
+        {
+            var v = i / 255d;
+            double result;
 
-        return (float)Math.Pow((v + LINEAR_INNERCURVE) / LINEAR_LOWERFACTOR, LINEAR_GAMMACOEFFICIENT);
+            if (linearize)
+            {
+                result = v <= SRGBLINEAR_THRESHOLD
+                    ? v / LINEAR_UPPERFACTOR
+                    : Math.Pow((v + LINEAR_INNERCURVE) / LINEAR_LOWERFACTOR, LINEAR_GAMMACOEFFICIENT);
+            }
+            else
+            {
+                result = v <= GAMMA_2_2_THRESHOLD
+                    ? v * LINEAR_UPPERFACTOR
+                    : (LINEAR_LOWERFACTOR * Math.Pow(v, 1d / LINEAR_GAMMACOEFFICIENT)) - LINEAR_INNERCURVE;
+            }
+
+            table[i] = (float)result;
+        }
+
+        return table;
     }
+
+    // Gets linearized value from an 8-bit sRGB channel.
+    // Returns linear value in range [0,1].
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float VLinear(byte c)
+        => VLINEAR_LUT[c];
+
+    // Gets the sRGB encoded value for an 8-bit channel treated as linear intensity.
+    // Returns gamma-corrected value in range [0,1].
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Gamma(byte c)
+        => GAMMA_LUT[c];
 
     // Gets L* value from luminosity, assuming D65 illuminant and standard observer.
     // Y is in range [0,1].
@@ -1078,7 +1132,51 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         if (Y <= CIE_LSTAR_THRESHOLD)
             return Y * CIE_LSTAR_UPPERMUL;
 
-        return ((float)Math.Pow(Y, CIE_LSTAR_CUBEROOT_FACTOR) * 116f) - CIE_LSTAR_OFFSET;
+        return (Cbrt(Y) * 116f) - CIE_LSTAR_OFFSET;
+    }
+
+    // The CIE-LAB f(t) non-linearity. Note this is not L* itself: L* = 116 * f(Y/Yn) - 16, while
+    // a* and b* are scaled differences of f() and must not carry the 116 factor.
+    // t is the white-point-relative tristimulus value.
+    private static float LabF(float t)
+    {
+        if (t > CIE_LSTAR_THRESHOLD)
+            return Cbrt(t);
+
+        return ((CIE_LSTAR_UPPERMUL * t) + CIE_LSTAR_OFFSET) / 116f;
+    }
+
+    // Cube root of a non-negative value.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Cbrt(float value)
+    {
+#if NET6_0_OR_GREATER
+        return MathF.Cbrt(value);
+#else
+        return (float)Math.Pow(value, CIE_LSTAR_CUBEROOT_FACTOR);
+#endif
+    }
+
+    // Single-precision power. MathF is unavailable on netstandard2.0.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Pow(float x, float y)
+    {
+#if NET6_0_OR_GREATER
+        return MathF.Pow(x, y);
+#else
+        return (float)Math.Pow(x, y);
+#endif
+    }
+
+    // Single-precision square root. MathF is unavailable on netstandard2.0.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Sqrt(float value)
+    {
+#if NET6_0_OR_GREATER
+        return MathF.Sqrt(value);
+#else
+        return (float)Math.Sqrt(value);
+#endif
     }
 
     // Splits bits of a byte into a 30-bit integer for Z-order curve calculation.
@@ -1086,7 +1184,7 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
     private static int ZCurve(int a)
     {
         // split out the lowest 10 bits to lowest 30 bits
-        a = (a | (a << 12)) & ZCURVE_SHIFT12;
+        a = (a | (a << 16)) & ZCURVE_SHIFT16;
         a = (a | (a << 08)) & ZCURVE_SHIFT08;
         a = (a | (a << 04)) & ZCURVE_SHIFT04;
         a = (a | (a << 02)) & ZCURVE_SHIFT02;
@@ -1106,57 +1204,180 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         return angle;
     }
 
-    // Combines hue, luminosity, and brightness into a single value for sorting. Hue is weighted most heavily, followed by luminosity and then brightness.
-    // If smooth is true, the luminosity and brightness values are inverted for odd hue values to create a smoother gradient when sorting.
+    // Quantizes a normalized [0,1] component into one of CFACTOR bands.
+    // Values at exactly 1 fold back into the last band so the result is always in [0,CFACTOR).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int Band(float value)
+    {
+        var band = (int)(value * CFACTOR);
+
+        if (band >= CFACTOR)
+            return CFACTOR - 1;
+
+        return band < 0 ? 0 : band;
+    }
+
+    // Packs three band indices into a single lexicographically ordered value, so that the primary
+    // band dominates the ordering, then the secondary, then the tertiary. Summing the components
+    // instead would let a large tertiary value outrank a whole primary band.
+    // The trailing fraction orders colors that land in the same cell, keeping the index a total
+    // order rather than one with large runs of identical keys.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static double Pack(int primary, int secondary, int tertiary, float tieBreaker)
+    {
+        var packed = ((((primary * CFACTOR) + secondary) * CFACTOR) + tertiary);
+
+        // Halved so that the tie breaker can never reach the next cell.
+        return packed + (Clamp(tieBreaker, 0f, 1f) * 0.5d);
+    }
+
+    // Combines hue, luminosity, and value into a single value for sorting. Hue is weighted most
+    // heavily, followed by luminosity and then value.
+    // If smooth is true, luminosity and value run backwards through every other hue band, so that
+    // the ramp stays continuous where two bands meet instead of snapping back to the start.
     private double GetHLVIndex(bool smooth)
     {
         var lum = GetLuminosity();
         GetHSV(out var h, out _, out var v);
 
-        h *= CFACTOR;
-        lum *= CFACTOR;
-        v *= CFACTOR;
+        // Hue arrives in degrees, luminosity and value are already normalized.
+        var hBand = Band(h / MAX_DEGREES);
 
-        if (smooth && h % 2 is 1)
+        if (smooth && (hBand & 1) is 1)
         {
-            v = CFACTOR - v;
-            lum = CFACTOR - lum;
+            lum = 1f - lum;
+            v = 1f - v;
         }
 
-        return h + lum + v;
+        return Pack(hBand, Band(lum), Band(v), lum);
     }
 
-    // Combines inverted hue, luminosity, and brightness into a single value for sorting. Inverted hue is weighted most heavily, followed by luminosity and then brightness.
+    // As GetHLVIndex, but walking the hue wheel from the opposite side: the hue is rotated half a
+    // turn and reversed, so the bands run in the opposite order.
     private double GetHLVInvertedIndex(bool smooth)
     {
         var lum = GetLuminosity();
-        var hue = 1 - Rotate(GetHue(), 180) / 360;
-        var brightness = GetBrightness();
+        GetHSV(out var h, out _, out var v);
 
-        var h2 = hue * CFACTOR;
-        var v2 = brightness * CFACTOR;
+        var hBand = Band(1f - (Rotate(h, 180) / MAX_DEGREES));
 
-        if (smooth)
+        if (smooth && (hBand & 1) is 1)
         {
-            if (h2 % 2 is 0)
-                v2 = CFACTOR - v2;
-            else
-                lum = CFACTOR - lum;
+            lum = 1f - lum;
+            v = 1f - v;
         }
 
-        return h2 + v2 + lum;
+        return Pack(hBand, Band(lum), Band(v), lum);
     }
 
-    // Combines hue, saturation, and value into a single value for sorting. Hue is weighted most heavily, followed by saturation and then value.
+    // Combines hue, saturation, and value into a single value for sorting. Hue is weighted most
+    // heavily, followed by saturation and then value.
     private double GetHSVIndex()
     {
         GetHSV(out var h, out var s, out var v);
 
-        h /= 360f;
-        v /= 255f;
+        // Only the hue needs normalizing here: GetHSV already returns s and v in [0,1].
+        // Luminosity breaks ties rather than v, which takes only 256 values and so would leave
+        // most colors sharing a key.
+        return Pack(Band(h / MAX_DEGREES), Band(s), Band(v), GetLuminosity());
+    }
 
-        // combine the HSV values into a single value for sorting
-        return (h * CFACTOR) + (s * CFACTOR) + (v * CFACTOR);
+    // Places the color in a hue band, then orders it inside that band by its distance along a
+    // Hilbert curve through OKLAB. The band keeps the overall sequence sweeping the hue wheel once,
+    // which is what makes a sorted set readable, while the curve keeps successive colors within a
+    // band close in lightness and chroma at the same time rather than in one component only.
+    private double GetHueHilbertIndex()
+    {
+        GetMinMax(out var min, out var max);
+
+        var band = Band(Hue(min, max) / MAX_DEGREES);
+
+        GetOKLAB(out var l, out var a, out var b);
+
+        var distance = Hilbert(
+            QuantizeOKLAB(l, OKLAB_L_MIN, OKLAB_L_MAX),
+            QuantizeOKLAB(a, OKLAB_A_MIN, OKLAB_A_MAX),
+            QuantizeOKLAB(b, OKLAB_B_MIN, OKLAB_B_MAX));
+
+        // The curve distance occupies the fraction below the band, so the band always dominates.
+        var position = band + (distance / (double)(1u << (HILBERT_BITS * 3)));
+
+        // Scaled by CFACTOR squared so the result spans the same range the other indexes produce.
+        return position * CFACTOR * CFACTOR;
+    }
+
+    // Maps an OKLAB coordinate onto the lattice the Hilbert curve is defined over.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint QuantizeOKLAB(float value, float min, float max)
+    {
+        const uint STEPS = (1u << HILBERT_BITS) - 1;
+
+        var scaled = (value - min) / (max - min) * STEPS;
+
+        if (scaled <= 0f)
+            return 0;
+
+        if (scaled >= STEPS)
+            return STEPS;
+
+        return (uint)(scaled + 0.5f);
+    }
+
+    // Distance along a 3D Hilbert curve, by Skilling's transform.
+    // https://doi.org/10.1063/1.1751381
+    // The per-bit tests are folded into masks rather than branches: they depend on the color being
+    // indexed, so as branches they mispredict on roughly every other iteration.
+    private static uint Hilbert(uint x, uint y, uint z)
+    {
+        uint t;
+
+        // Inverse undo.
+        for (var k = HILBERT_BITS - 1; k >= 1; k--)
+        {
+            var p = (1u << k) - 1;
+
+            // A mask of all ones when the bit is set, all zeros when it is not. Where the bit is
+            // set the low axis is inverted, otherwise the two axes exchange their low bits.
+            var mask = 0u - ((x >> k) & 1u);
+            x ^= p & mask;
+
+            mask = 0u - ((y >> k) & 1u);
+            x ^= p & mask;
+            t = (x ^ y) & p & ~mask;
+            x ^= t;
+            y ^= t;
+
+            mask = 0u - ((z >> k) & 1u);
+            x ^= p & mask;
+            t = (x ^ z) & p & ~mask;
+            x ^= t;
+            z ^= t;
+        }
+
+        // Gray encode.
+        y ^= x;
+        z ^= y;
+
+        t = 0;
+
+        for (var k = HILBERT_BITS - 1; k >= 1; k--)
+            t ^= ((1u << k) - 1) & (0u - ((z >> k) & 1u));
+
+        x ^= t;
+        y ^= t;
+        z ^= t;
+
+        // Interleave the transpose into a single distance along the curve.
+        uint distance = 0;
+
+        for (var bit = HILBERT_BITS - 1; bit >= 0; bit--)
+        {
+            distance = (distance << 1) | ((x >> bit) & 1u);
+            distance = (distance << 1) | ((y >> bit) & 1u);
+            distance = (distance << 1) | ((z >> bit) & 1u);
+        }
+
+        return distance;
     }
 
     #endregion
@@ -1174,14 +1395,18 @@ public unsafe readonly partial struct Composite : IEquatable<Color>, IEquatable<
         => !left.Equals(right);
 
     /// <summary>
-    ///     Converts a <see cref="Composite"/> value to a 32-bit unsigned integer representation of RGBA.
+    ///     Converts a <see cref="Composite"/> value to its 32-bit unsigned sRGB (A) representation, identical to <see cref="Value"/>.
     /// </summary>
+    /// <remarks>
+    ///     The most significant byte holds the A (alpha) channel, followed by the R (red), G (green) and B (blue) channels in that order.
+    ///     This is the exact inverse of <see cref="op_Implicit(uint)"/>.
+    /// </remarks>
     public static implicit operator uint(Composite color)
-        => (uint)(color.R | (color.G << 8) | (color.B << 16) | (color.A << 24));
+        => color.Value;
 
     /// <summary>
-    ///     Converts a 32-bit unsigned integer representation of RGBA to a <see cref="Composite"/> value by interpreting the least significant byte as the A (alpha) channel, followed by the B (blue), G (green), and R (red) channels in that order.
+    ///     Converts a 32-bit unsigned integer representation of sRGB (A) to a <see cref="Composite"/> value by interpreting the most significant byte as the A (alpha) channel, followed by the R (red), G (green), and B (blue) channels in that order.
     /// </summary>
-    public static implicit operator Composite(uint rgba)
-        => new(rgba);
+    public static implicit operator Composite(uint argb)
+        => new(argb);
 }

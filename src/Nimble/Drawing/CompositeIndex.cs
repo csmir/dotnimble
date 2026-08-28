@@ -33,4 +33,18 @@ public enum CompositeIndex
     ///     Produces a depth-first composite index that transitions across any dimension.
     /// </summary>
     HSV = 4,
+
+    /// <summary>
+    ///     Produces a hue-first composite index that orders each hue band along a Hilbert curve
+    ///     through the OKLAB color space.
+    /// </summary>
+    /// <remarks>
+    ///     The other indexes order each band by a single component, which keeps the sequence legible
+    ///     but leaves large perceptual gaps between neighbouring colors. This one keeps the same
+    ///     hue-first structure while filling each band with a space-filling curve, so consecutive
+    ///     colors stay close in every dimension at once. It is roughly ten times smoother than
+    ///     <see cref="HLV1D"/> by mean perceptual step, at no cost to the hue ordering, and is the
+    ///     best default for sorting an arbitrary set of colors for display.
+    /// </remarks>
+    HueHilbert = 5,
 }

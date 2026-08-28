@@ -46,24 +46,24 @@ public readonly partial struct Composite
     /// <param name="color">The <see cref="Color"/> to convert to a <see cref="Composite"/>.</param>
     /// <returns>A <see cref="Composite"/> instance that encapsulates the value of the specified <see cref="Color"/>.</returns>
     public static Composite FromColor(Color color)
-    {
-#if NET6_0_OR_GREATER
-        var value = unchecked((uint)GetValue(color));
-#else
-        var value = unchecked((uint)(long)typeof(Color)
-            .GetProperty("Value", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(color));
-#endif
-
-        return new(value);
-    }
+        => new(unchecked((uint)color.ToArgb()));
 
 #if NET6_0_OR_GREATER
     /// <summary>
     ///     Creates a new <see cref="Composite"/> instance with a random value. This method is only available on .NET 6.0 or later due to the use of <see cref="Random.Shared"/>.
     /// </summary>
+    /// <param name="randomizeAlpha">
+    ///     When <see langword="false"/> (the default) the resulting value is fully opaque and only the R, G and B channels are randomized.
+    ///     When <see langword="true"/> the alpha channel is randomized as well.
+    /// </param>
     /// <returns>A <see cref="Composite"/> instance with a random value.</returns>
-    public static Composite FromRandom() 
-        => new((uint)Random.Shared.Next());
+    public static Composite FromRandom(bool randomizeAlpha = false)
+    {
+        // Random.Shared.Next() only spans [0, int.MaxValue), which would cap the most significant
+        // byte at 127. NextInt64 is used to cover the full 32-bit range instead.
+        var value = unchecked((uint)Random.Shared.NextInt64(uint.MinValue, uint.MaxValue + 1L));
+
+        return new(randomizeAlpha ? value : value | 0xFF000000u);
+    }
 #endif
 }
