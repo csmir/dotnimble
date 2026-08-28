@@ -21,7 +21,7 @@
 
   <PropertyGroup Label="Assembly/Package">
 
-    <PackageVersion>1.0.0-alpha.12</PackageVersion>
+    <PackageVersion>1.0.0-alpha.13</PackageVersion>
     <AssemblyVersion>1.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
 
