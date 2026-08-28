@@ -45,8 +45,13 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     const float
         CIE_LSTAR_THRESHOLD = 216f / 24389f,
         CIE_LSTAR_UPPERMUL = 24389f / 27f,
-        CIE_LSTAR_CUBEROOT_FACTOR = 1f / 3f,
         CIE_LSTAR_OFFSET = 16f;
+
+    // Seed for the bit-level cube root approximation. Dividing a float's raw bits by three divides
+    // its exponent by three; this constant re-biases the result and absorbs most of the error the
+    // mantissa picks up on the way. Picked by sweeping candidates against the exact cube root over
+    // the [0,1] domain that every call site works in.
+    const int CBRT_SEED = 0x2A5137A0;
 
     // CIE D65 white point (2 degree standard observer), used to normalize XYZ before CIE-LAB.
     const float
@@ -1150,10 +1155,42 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static float Cbrt(float value)
     {
+        // A zero or denormal input would decay towards zero under the refinement below without ever
+        // reaching it, leaving black with a lightness a fraction above zero.
+        if (value <= 0f)
+            return 0f;
+
+        var y = Int32BitsToSingle((SingleToInt32Bits(value) / 3) + CBRT_SEED);
+
+        // Newton on y^3 - value, in the averaged form so the cube is never materialized. Each step
+        // squares the relative error: 3e-2, then 1e-3, then 1e-6, then float's own floor.
+        y = ((2f / 3f) * y) + (value / (3f * y * y));
+        y = ((2f / 3f) * y) + (value / (3f * y * y));
+        y = ((2f / 3f) * y) + (value / (3f * y * y));
+
+        return y;
+    }
+
+    // Reinterprets a float as its raw bit pattern. BitConverter's single-precision overloads are
+    // unavailable on netstandard2.0.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static unsafe int SingleToInt32Bits(float value)
+    {
 #if NET6_0_OR_GREATER
-        return MathF.Cbrt(value);
+        return BitConverter.SingleToInt32Bits(value);
 #else
-        return (float)Math.Pow(value, CIE_LSTAR_CUBEROOT_FACTOR);
+        return *(int*)&value;
+#endif
+    }
+
+    // Reinterprets a raw bit pattern as a float.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static unsafe float Int32BitsToSingle(int value)
+    {
+#if NET6_0_OR_GREATER
+        return BitConverter.Int32BitsToSingle(value);
+#else
+        return *(float*)&value;
 #endif
     }
 
