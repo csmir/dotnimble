@@ -4,6 +4,7 @@ using System.Buffers;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using Nimble.Buffers;
 using Vsb = Nimble.Text.ValueStringBuilder;
@@ -196,6 +197,14 @@ public ref struct ValueStringBuilder : IDisposable
 
     #region Uncategorized APIs
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private readonly bool CheckCapacity(int requestedCapacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(requestedCapacity);
+
+        return requestedCapacity < Capacity;
+    }
+
     /// <summary>
     ///     Ensures that the capacity of this builder is at least the specified value.
     /// </summary>
@@ -231,6 +240,7 @@ public ref struct ValueStringBuilder : IDisposable
 
         return true;
     }
+
     /// <summary>
     ///     Removes all characters from the current <see cref="Vsb"/> instance.
     /// </summary>
@@ -281,7 +291,7 @@ public ref struct ValueStringBuilder : IDisposable
 
         ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)endIndex, (uint)_position);
 
-        FastMove(_span[endIndex.._position], _span[startIndex..]);
+        FastCopy(_span[endIndex.._position], _span[startIndex..], true);
 
         _position -= length;
 
@@ -342,16 +352,12 @@ public ref struct ValueStringBuilder : IDisposable
 
     #region Internal Helpers
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private readonly void FastCopy(scoped ReadOnlySpan<char> source, scoped Span<char> destination)
+    private readonly void FastCopy(scoped ReadOnlySpan<char> source, scoped Span<char> destination, bool overlap = false)
     {
-        unsafe { fixed (char* s = source, d = destination) Unsafe.CopyBlock(d, s, (uint)source.Length * sizeof(char)); }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void FastMove(scoped ReadOnlySpan<char> source, scoped Span<char> destination)
-    {
-        source.CopyTo(destination);
+        if (overlap)
+            source.CopyTo(destination);
+        else
+            Unsafe.CopyBlock(ref Unsafe.As<char, byte>(ref MemoryMarshal.GetReference(destination)), ref Unsafe.As<char, byte>(ref MemoryMarshal.GetReference(source)), (uint)source.Length * sizeof(char));
     }
 
     /// <summary>
@@ -393,18 +399,6 @@ public ref struct ValueStringBuilder : IDisposable
         _span = (_rentedArray = newArray).Array.AsSpan(0, requestedSize);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private readonly ReadOnlySpan<char> GetNonOverlappingSpan(ReadOnlySpan<char> value)
-    {
-        if (!value.Overlaps(_span)) return value;
-
-        char[] buffer = GC.AllocateUninitializedArray<char>(value.Length);
-
-        FastCopy(value, buffer);
-
-        return buffer;
-    }
-
     #endregion
 
     #region CopyTo(...)
@@ -419,13 +413,7 @@ public ref struct ValueStringBuilder : IDisposable
 
     public readonly void CopyTo(int sourceIndex, char[] destination, int destinationIndex, int count)
     {
-        ReadOnlySpan<char> source = _span.Slice(sourceIndex, count);
-        Span<char> target = destination.AsSpan(destinationIndex, count);
-
-        if (source.Overlaps(target))
-            source.CopyTo(target);
-        else
-            FastCopy(source, target);
+        FastCopy(_span.Slice(sourceIndex, count), destination.AsSpan(destinationIndex, count));
     }
 
     ///  <summary>
@@ -437,12 +425,7 @@ public ref struct ValueStringBuilder : IDisposable
 
     public readonly void CopyTo(int sourceIndex, scoped Span<char> destination, int count)
     {
-        ReadOnlySpan<char> source = _span.Slice(sourceIndex, count);
-
-        if (source.Overlaps(destination))
-            source.CopyTo(destination);
-        else
-            FastCopy(source, destination);
+        FastCopy(_span.Slice(sourceIndex, count), destination);
     }
 
     #endregion
@@ -496,16 +479,47 @@ public ref struct ValueStringBuilder : IDisposable
     [UnscopedRef]
     public ref Vsb Append(scoped ReadOnlySpan<char> value)
     {
-        value = GetNonOverlappingSpan(value);
+        int required = _position + value.Length;
 
-        EnsureCapacity(checked(_position + value.Length));
+        #region Span Alias Protection
 
+        // Fast paths:
+        // 1. If the span doesn't overlap, this is irrelevant.
+        // 2. If we have enough capacity, there's no situation where the write could be a problem.
+        // *. We don't attempt to use scratch space, as condition 2 is required first.
+        if (CheckCapacity(required))
+            goto writeFast;
+
+        if (!_span.Overlaps(value))
+            goto write;
+
+        scoped Span<char> copy;
+
+        if (value.Length < 2048)
+            copy = stackalloc char[value.Length];
+        else
+            copy = GC.AllocateUninitializedArray<char>(value.Length);
+
+        FastCopy(value, copy);
+
+        value = copy;
+
+        #endregion
+
+    write:
+        EnsureCapacity(required);
+
+    writeFast:
         FastCopy(value, _span[_position..]);
 
         _position += value.Length;
 
         return ref this;
     }
+
+    #endregion
+
+    #region Type Append(...)
 
     [UnscopedRef]
     private ref Vsb AppendSpanFormattable<T>(T value) where T : ISpanFormattable => ref AppendSpanFormattable(value, default, null);
@@ -522,12 +536,9 @@ public ref struct ValueStringBuilder : IDisposable
         }
 
         _position += charsWritten;
+
         return ref this;
     }
-
-    #endregion
-
-    #region Type Append(...)
 
     /// <summary>
     ///     Appends a range of characters to the end of this builder.
@@ -1032,6 +1043,7 @@ public ref struct ValueStringBuilder : IDisposable
 
         Append(values[0]);
 
+        // No alias verification needed, append handles it.
         if (useSpan)
         {
             for (int i = 1; i < values.Length; i++) Append(separatorSpan).Append(values[i]);
@@ -1191,11 +1203,15 @@ public ref struct ValueStringBuilder : IDisposable
 
     #region Insert(...)
 
-    private void GrowAndShift(int index, int count)
+    private void GrowAndShift(int index, int count, bool skipExpansionCheck = false)
     {
-        EnsureCapacity(checked(_position + count));
+        if (!skipExpansionCheck)
+            EnsureCapacity(checked(_position + count));
 
-        FastMove(_span[index.._position], _span[(index + count)..]);
+        // We could be shifting so far that it doesn't overlap.
+        Span<char> source = _span[index.._position], destination = _span[(index + count)..];
+
+        FastCopy(source, destination, source.Overlaps(destination));
 
         _position += count;
     }
@@ -1223,6 +1239,9 @@ public ref struct ValueStringBuilder : IDisposable
         ArgumentOutOfRangeException.ThrowIfOutOfRange(index, 0, _position);
         ArgumentOutOfRangeException.ThrowIfNegative(count);
 
+        bool skipExpansionCheck = false;
+        scoped Span<char> copy;
+
         if (count != 0 && value.Length != 0)
         {
             if (count > int.MaxValue / value.Length)
@@ -1230,9 +1249,39 @@ public ref struct ValueStringBuilder : IDisposable
 
             int expansion = value.Length * count;
 
-            value = GetNonOverlappingSpan(value);
+            #region Span Alias Protection
 
-            GrowAndShift(index, expansion);
+            if (!_span.Overlaps(value, out int offset))
+                goto noOverlap;
+
+            // If the expansion takes place after our alias, we don't need to worry about the alias being overwritten.
+            if (index >= (offset + value.Length))
+            {
+                // If the current capacity is enough, we don't need to worry about the alias being garbage collected.
+                if (skipExpansionCheck = CheckCapacity(_position + expansion))
+                {
+                    // If all of the above is true, there may be space to bypass the allocation.
+                    if (TryScratchBuffer(ref value, expansion))
+                    {
+                        // JIT is happy
+                        goto noOverlap;
+                    }
+                }
+            }
+
+            if (value.Length < 2048)
+                copy = stackalloc char[value.Length];
+            else
+                copy = GC.AllocateUninitializedArray<char>(value.Length);
+
+            FastCopy(value, copy);
+
+            value = copy;
+
+            #endregion
+
+        noOverlap:
+            GrowAndShift(index, expansion, skipExpansionCheck);
 
             Span<char> destination = _span.Slice(index, expansion);
 
@@ -1413,21 +1462,7 @@ public ref struct ValueStringBuilder : IDisposable
     /// <param name="value"> The value to insert. </param>
     /// <returns> A reference to this instance after the insert operation has completed. </returns>
     [UnscopedRef]
-    public ref Vsb Insert(int index, scoped ReadOnlySpan<char> value)
-    {
-        ArgumentOutOfRangeException.ThrowIfOutOfRange(index, 0, _position);
-
-        if (value.Length != 0)
-        {
-            value = GetNonOverlappingSpan(value);
-
-            GrowAndShift(index, value.Length);
-
-            FastCopy(value, _span[index..]);
-        }
-
-        return ref this;
-    }
+    public ref Vsb Insert(int index, scoped ReadOnlySpan<char> value) => ref Insert(index, value, 1);
 
     [UnscopedRef]
     private ref Vsb InsertSpanFormattable<T>(int index, T value)
@@ -1497,9 +1532,6 @@ public ref struct ValueStringBuilder : IDisposable
 
         ArgumentOutOfRangeException.ThrowIfGreaterThan((uint)(startIndex + count), (uint)_position);
 
-        oldValue = GetNonOverlappingSpan(oldValue);
-        newValue = GetNonOverlappingSpan(newValue);
-
         if (difference == 0)
         {
             if (oldValue.Equals(newValue, StringComparison.Ordinal))
@@ -1514,16 +1546,73 @@ public ref struct ValueStringBuilder : IDisposable
         return ref ReplaceLongerSpan(oldValue, newValue, startIndex, count);
     }
 
-    #region Replace
+    #region Replace Helpers
 
-    // oldValue == newValue
+    private readonly bool TryScratchBuffer(ref ReadOnlySpan<char> original, int accumulatedOffset = 0)
+    {
+        // Span doesn't need to be aliased.
+        if (!original.Overlaps(_span))
+            return true;
+
+        int writeTarget = _position + accumulatedOffset;
+
+        /* At runtime, the builder's full capacity is not always in use, leaving volatile scratch space available to us.
+         * Here we check if enough scratch space exists to store the alias, without comitting to further allocations later.
+         * The optional parameter 'accumulatedOffset' can be used to indicate an amount of scratch space is already used.
+         * This allows us to store multiple things in scratch, assuming the caller tracks the offsets required. */
+        if ((Capacity - writeTarget) >= original.Length)
+        {
+            Span<char> span = _span.Slice(writeTarget, original.Length);
+
+            FastCopy(original, span);
+
+            original = span;
+
+            return true;
+        }
+
+        return false;
+    }
+
     [UnscopedRef]
     private ref Vsb ReplaceEqualSpan(scoped Span<char> span, scoped ReadOnlySpan<char> oldValue, scoped ReadOnlySpan<char> newValue)
     {
-        uint bytes = (uint)(newValue.Length * sizeof(char));
-        int oldLength = oldValue.Length;
+        #region Span Alias Protection
 
-        ref char source = ref MemoryMarshal.GetReference(newValue);
+        int accumulatedOffset = 0;
+        scoped Span<char> copy;
+
+        if (!TryScratchBuffer(ref oldValue))
+        {
+            if (oldValue.Length < 2048)
+                copy = stackalloc char[oldValue.Length];
+            else
+                copy = GC.AllocateUninitializedArray<char>(oldValue.Length);
+
+            FastCopy(oldValue, copy);
+
+            oldValue = copy;
+        }
+        else
+        {
+            accumulatedOffset = newValue.Length;
+        }
+
+        if (!TryScratchBuffer(ref newValue, accumulatedOffset))
+        {
+            if (newValue.Length < 2048)
+                copy = stackalloc char[newValue.Length];
+            else
+                copy = GC.AllocateUninitializedArray<char>(newValue.Length);
+
+            FastCopy(newValue, copy);
+
+            newValue = copy;
+        }
+
+        #endregion
+
+        #region Replacement
 
         int offset = 0;
 
@@ -1536,21 +1625,58 @@ public ref struct ValueStringBuilder : IDisposable
 
             index += offset;
 
-            ref char destination = ref MemoryMarshal.GetReference(span[index..]);
+            FastCopy(newValue, span[index..]);
 
-            Unsafe.CopyBlockUnaligned(ref Unsafe.As<char, byte>(ref destination), ref Unsafe.As<char, byte>(ref source), bytes);
-
-            offset = index + oldLength;
+            offset = index + oldValue.Length;
         }
+
+        #endregion
 
         return ref this;
     }
 
-
-    // oldValue > newValue
     [UnscopedRef]
     private ref Vsb ReplaceShorterSpan(scoped ReadOnlySpan<char> oldValue, scoped ReadOnlySpan<char> newValue, int startIndex, int count)
     {
+        #region Span Alias Protection
+
+        int accumulatedOffset = 0;
+        scoped Span<char> copy;
+
+        if (!TryScratchBuffer(ref oldValue))
+        {
+
+            if (oldValue.Length < 2048)
+                copy = stackalloc char[oldValue.Length];
+            else
+                copy = GC.AllocateUninitializedArray<char>(oldValue.Length);
+
+            FastCopy(oldValue, copy);
+
+            oldValue = copy;
+        }
+        else
+        {
+            accumulatedOffset = newValue.Length;
+        }
+
+        if (!TryScratchBuffer(ref newValue, accumulatedOffset))
+        {
+
+            if (newValue.Length < 2048)
+                copy = stackalloc char[newValue.Length];
+            else
+                copy = GC.AllocateUninitializedArray<char>(newValue.Length);
+
+            FastCopy(newValue, copy);
+
+            newValue = copy;
+        }
+
+        #endregion
+
+        #region Replacement
+
         Span<char> span = _span.Slice(startIndex, count);
 
         int read = 0, write = 0;
@@ -1592,6 +1718,10 @@ public ref struct ValueStringBuilder : IDisposable
         if (removed == 0)
             return ref this;
 
+        #endregion
+
+        #region Shift Tail
+
         // The range after the replacement region must move left once.
         int tailStart = startIndex + count, tailLength = _position - tailStart;
 
@@ -1600,14 +1730,16 @@ public ref struct ValueStringBuilder : IDisposable
 
         _position -= removed;
 
+        #endregion
+
         return ref this;
     }
 
-
-    // newValue > oldValue
     [UnscopedRef]
     private ref Vsb ReplaceLongerSpan(scoped ReadOnlySpan<char> oldValue, scoped ReadOnlySpan<char> newValue, int startIndex, int count)
     {
+        #region Compute Matches
+
         int difference = newValue.Length - oldValue.Length, end = startIndex + count;
 
         // First pass: count matches.
@@ -1627,22 +1759,73 @@ public ref struct ValueStringBuilder : IDisposable
         if (matches == 0)
             return ref this;
 
-        // Handle the required expansion once.
-        int growth = checked(matches * difference);
+        #endregion
 
-        EnsureCapacity(checked(_position + growth));
+        #region Handle Expansion
+
+        int expansion = checked(matches * difference), writeOffset = expansion;
+
+        bool willGrow = CheckCapacity(_position + expansion);
+
+        scoped Span<char> copy;
+
+        if (!_span.Overlaps(oldValue))
+            goto skipOldAlloc;
+
+        if (!willGrow && TryScratchBuffer(ref oldValue, writeOffset))
+        {
+            writeOffset += oldValue.Length;
+            goto skipOldAlloc;
+        }
+
+        if (oldValue.Length < 2048)
+            copy = stackalloc char[oldValue.Length];
+        else
+            copy = GC.AllocateUninitializedArray<char>(oldValue.Length);
+
+        FastCopy(oldValue, copy);
+
+        oldValue = copy;
+
+    skipOldAlloc:
+
+        if (!_span.Overlaps(newValue))
+            goto skipNewAlloc;
+
+        if (!willGrow && TryScratchBuffer(ref newValue, writeOffset))
+        {
+            writeOffset += newValue.Length;
+            goto skipNewAlloc;
+        }
+
+        if (newValue.Length < 2048)
+            copy = stackalloc char[newValue.Length];
+        else
+            copy = GC.AllocateUninitializedArray<char>(newValue.Length);
+
+        FastCopy(newValue, copy);
+
+        newValue = copy;
+
+    skipNewAlloc:
+        if (willGrow)
+            EnsureCapacity(checked(_position + expansion));
+
+        #endregion
+
+        #region Replacement
 
         int tailLength = _position - end;
 
         if (tailLength != 0)
-            _span.Slice(end, tailLength).CopyTo(_span.Slice(end + growth, tailLength));
+            _span.Slice(end, tailLength).CopyTo(_span.Slice(end + expansion, tailLength));
 
-        _position += growth;
+        _position += expansion;
 
-        Span<char> span = _span.Slice(startIndex, count + growth);
+        Span<char> span = _span.Slice(startIndex, count + expansion);
 
         // Rewrite from the end so that the expanded destination never overwrites source data that has not yet been consumed.
-        int sourceEnd = count, destinationEnd = sourceEnd + growth;
+        int sourceEnd = count, destinationEnd = sourceEnd + expansion;
 
         while (sourceEnd != 0)
         {
@@ -1672,6 +1855,8 @@ public ref struct ValueStringBuilder : IDisposable
 
             sourceEnd = match;
         }
+
+        #endregion
 
         return ref this;
     }
