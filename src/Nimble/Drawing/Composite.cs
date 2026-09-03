@@ -32,15 +32,29 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
         BT_601_G = 0.587f,
         BT_601_B = 0.114f;
 
+    // The sRGB transfer function's parameters, at the precision the curve is defined in. The
+    // transfer tables are built from these rather than from the single-precision forms below: an
+    // 0.055f promoted back to double no longer cancels against a 1.055f, which leaves the top of the
+    // linear curve at 1.0000001 instead of at one, and every value derived from it carrying that.
+    const double
+        EXACT_SRGBLINEAR_THRESHOLD = 0.04045d,
+        EXACT_GAMMA_2_2_THRESHOLD = 0.0031308d,
+        EXACT_UPPERFACTOR = 12.92d,
+        EXACT_INNERCURVE = 0.055d,
+        EXACT_LOWERFACTOR = 1.055d,
+        EXACT_GAMMACOEFFICIENT = 2.4d;
+
+    // The same parameters for the single-precision path, narrowed from the definitions above rather
+    // than written out a second time, so that the two forms of each cannot drift apart.
     const float
-        SRGBLINEAR_THRESHOLD = 0.04045f,
-        GAMMA_2_2_THRESHOLD = 0.0031308f;
+        SRGBLINEAR_THRESHOLD = (float)EXACT_SRGBLINEAR_THRESHOLD,
+        GAMMA_2_2_THRESHOLD = (float)EXACT_GAMMA_2_2_THRESHOLD;
 
     const float
-        LINEAR_UPPERFACTOR = 12.92f,
-        LINEAR_INNERCURVE = 0.055f,
-        LINEAR_LOWERFACTOR = 1.055f,
-        LINEAR_GAMMACOEFFICIENT = 2.4f;
+        LINEAR_UPPERFACTOR = (float)EXACT_UPPERFACTOR,
+        LINEAR_INNERCURVE = (float)EXACT_INNERCURVE,
+        LINEAR_LOWERFACTOR = (float)EXACT_LOWERFACTOR,
+        LINEAR_GAMMACOEFFICIENT = (float)EXACT_GAMMACOEFFICIENT;
 
     const float
         CIE_LSTAR_THRESHOLD = 216f / 24389f,
@@ -61,7 +75,7 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
 
     // Morton (Z-order) bit-spreading masks for 10-bit lanes. C# has no octal literals, so these
     // are written in hexadecimal.
-    const int
+    const uint
         ZCURVE_SHIFT16 = 0x030000FF,
         ZCURVE_SHIFT08 = 0x0300F00F,
         ZCURVE_SHIFT04 = 0x030C30C3,
@@ -71,6 +85,9 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     const int
         CFACTOR = 8,
         MAX_DEGREES = 360;
+
+    // 180 / pi, so that the polar color spaces convert their angle with a multiply.
+    const float RADIANS_TO_DEGREES = 57.29577951308232f;
 
     // Bits per axis for the OKLAB Hilbert lattice. Three axes at 10 bits fill a 30-bit index.
     const int HILBERT_BITS = 10;
@@ -147,24 +164,22 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     /// <param name="b">The blue channel.</param>
     /// <param name="a">The (optional) alpha channel.</param>
     public Composite(byte r, byte g, byte b, byte a = byte.MaxValue)
-    {
-        A = a;
-        R = r;
-        G = g;
-        B = b;
-    }
+        => Value = Encode(r, g, b, a);
 
     #region Internal Constructors
 
     private Composite(float h, float s, float v)
     {
-        A = byte.MaxValue;
+        var scaled = h / 60f;
+        var sector = (int)scaled;
+        var f = scaled - sector;
 
-        var sector = (int)(h / 60f);
-        var f = (h / 60f) - sector;
+        // Wrap into [0,6) so that a hue at or beyond 360 degrees cannot index off the end. One
+        // remainder and a conditional add, rather than the two remainders a symmetric wrap costs.
+        var hi = sector % 6;
 
-        // Wrap into [0,6) so that a hue at or beyond 360 degrees cannot index off the end.
-        var hi = ((sector % 6) + 6) % 6;
+        if (hi < 0)
+            hi += 6;
 
         v *= byte.MaxValue;
 
@@ -175,33 +190,19 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
         var q = ToByte(v * (1 - (f * s)));
         var t = ToByte(v * (1 - ((1 - f) * s)));
 
-        switch (hi)
+        Value = hi switch
         {
-            case 0:
-                R = b; G = t; B = p;
-                break;
-            case 1:
-                R = q; G = b; B = p;
-                break;
-            case 2:
-                R = p; G = b; B = t;
-                break;
-            case 3:
-                R = p; G = q; B = b;
-                break;
-            case 4:
-                R = t; G = p; B = b;
-                break;
-            default:
-                R = b; G = p; B = q;
-                break;
-        }
+            0 => Encode(b, t, p, byte.MaxValue),
+            1 => Encode(q, b, p, byte.MaxValue),
+            2 => Encode(p, b, t, byte.MaxValue),
+            3 => Encode(p, q, b, byte.MaxValue),
+            4 => Encode(t, p, b, byte.MaxValue),
+            _ => Encode(b, p, q, byte.MaxValue),
+        };
     }
 
     private Composite(float h, float s, float l, float a = 1f)
     {
-        A = ToChannel(a);
-
         var c = (1 - Math.Abs((2 * l) - 1)) * s;
         var x = c * (1 - Math.Abs(((h / 60) % 2) - 1));
         var m = l - (c / 2);
@@ -247,9 +248,7 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
             b = x;
         }
 
-        R = ToChannel(r + m);
-        G = ToChannel(g + m);
-        B = ToChannel(b + m);
+        Value = Encode(ToChannel(r + m), ToChannel(g + m), ToChannel(b + m), ToChannel(a));
     }
 
     #endregion
@@ -294,11 +293,17 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     /// </remarks>
     /// <returns>Perceived brightness in accordance to BT.601 coefficients, in the 0-255 range.</returns>
     public float GetPerceivedBrightness()
-        => Sqrt(
-            (BT_601_R * R * R) +
-            (BT_601_G * G * G) +
-            (BT_601_B * B * B)
+    {
+        // Widened once per channel rather than once per occurrence, so the squares cost a multiply
+        // each instead of a second integer-to-float conversion.
+        float r = R, g = G, b = B;
+
+        return Sqrt(
+            (BT_601_R * r * r) +
+            (BT_601_G * g * g) +
+            (BT_601_B * b * b)
         );
+    }
 
     /// <summary>
     ///     Gets the wavelength of the color based on its hue, 
@@ -325,9 +330,9 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     /// </summary>
     /// <returns>The Z-order value for this color.</returns>
     public int GetZValue()
-        => ZCurve(R)
-         + (ZCurve(G) << 1)
-         + (ZCurve(B) << 2);
+        => (int)(ZCurve(R)
+              | (ZCurve(G) << 1)
+              | (ZCurve(B) << 2));
 
     /// <summary>
     ///     Gets the hue of the color between 0 and 360 degrees.
@@ -366,6 +371,41 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
         GetMinMax(out var min, out var max);
 
         return Brightness(min, max);
+    }
+
+    /// <summary>
+    ///     Gets the chroma of the color: the spread between its largest and smallest channel.
+    /// </summary>
+    /// <remarks>
+    ///     Chroma is what carries the hue, and how much of it is present sets how precisely a hue can be represented at all.
+    ///     A fully saturated color spreads its channels across the whole range and pins its hue to a fraction of a degree, while an achromatic color has a chroma of zero and no hue at all.
+    ///     The result spans the 0-255 range of the input channels. For how colorful the color is relative to its own lightness, normalized to 0-1, use <see cref="GetSaturation"/> instead.
+    /// </remarks>
+    /// <returns>The difference between the largest and the smallest of the R, G and B channels.</returns>
+    public int GetChroma()
+    {
+        // Both extremes fall out of a single pass, where Max() - Min() would order the channels twice.
+        GetMinMax(out var min, out var max);
+
+        return max - min;
+    }
+
+    /// <summary>
+    ///     Gets the angle between this color's hue and another color's hue, measured the short way around the color wheel.
+    /// </summary>
+    /// <remarks>
+    ///     Hue is cyclic, so hues of 359 and 1 degrees are two degrees apart rather than 358.
+    ///     A color with no chroma has no hue and reports zero, which is what the separation is then measured against; <see cref="GetChroma"/> tells the two cases apart.
+    /// </remarks>
+    /// <param name="o">The other color to measure the hue separation against.</param>
+    /// <returns>The separation between the two hues, between 0 and 180 degrees.</returns>
+    public float GetHueDifference(Composite o)
+    {
+        // Both hues arrive in [0,360), so their difference cannot exceed a full turn and folding it
+        // back into a half turn takes a single comparison rather than a remainder.
+        var difference = Math.Abs(GetHue() - o.GetHue());
+
+        return difference > 180f ? MAX_DEGREES - difference : difference;
     }
 
     /// <summary>
@@ -464,7 +504,7 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     /// </summary>
     /// <param name="indexType">The type of index to generate for this value.</param>
     /// <returns>A value representing a floating point (composite) index for the current value produced according to <paramref name="indexType"/>.</returns>
-    /// <exception cref="ArgumentException">Thrown when the provided type is not a named value of <see cref="CompositeIndex"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the provided type is not a named value of <see cref="CompositeIndex"/>.</exception>
     public double GetIndex(CompositeIndex indexType)
     {
         return indexType switch
@@ -477,7 +517,7 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
                 => GetHSVIndex(),
             CompositeIndex.HueHilbert
                 => GetHueHilbertIndex(),
-            _ => throw new ArgumentException("Invalid index type.", nameof(indexType)),
+            _ => throw new ArgumentOutOfRangeException(nameof(indexType)),
         };
     }
 
@@ -491,6 +531,18 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
 
         return (h, s, v);
     }
+
+    /// <summary>
+    ///     Gets the linearized representation of the current value as R, G, B, undoing the sRGB transfer function on each channel.
+    /// </summary>
+    /// <remarks>
+    ///     Linear light is what every physical operation on a color expects: blending, resizing and filtering all produce the wrong answer when applied to the gamma-encoded channels directly.
+    ///     It is also the space the other color spaces on this type are derived from.
+    ///     The alpha channel carries no transfer function and is not part of the result; read it from <see cref="A"/> where it is needed.
+    /// </remarks>
+    /// <returns>A <see cref="ValueTuple{T1, T2, T3}"/> containing the linearized R, G, B, each in the 0-1 range.</returns>
+    public (float R, float G, float B) GetLinear()
+        => (VLinear(R), VLinear(G), VLinear(B));
 
     /// <summary>
     ///     Gets the CIE-XYZ color space representation of the current value as X, Y, Z.
@@ -818,15 +870,22 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     /// </summary>
     /// <param name="format">The target format for the current value.</param>
     /// <returns>A string representing web-format of the current value.</returns>
-    /// <exception cref="ArgumentException">Thrown when the provided format is not a named value of <see cref="CompositeFormat"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the provided format is not a named value of <see cref="CompositeFormat"/>.</exception>
     public string ToString(CompositeFormat format)
     {
         switch (format)
         {
+#if NET6_0_OR_GREATER
+            case CompositeFormat.RGB:
+                return ToChannelString(alpha: false);
+            case CompositeFormat.RGBA:
+                return ToChannelString(alpha: true);
+#else
             case CompositeFormat.RGB:
                 return $"rgb({R}, {G}, {B})";
             case CompositeFormat.RGBA:
                 return $"rgba({R}, {G}, {B}, {A})";
+#endif
             case CompositeFormat.HSL:
                 {
                     var (h, s, l) = GetHSL();
@@ -869,18 +928,128 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
                 }
             case CompositeFormat.HEX:
                 {
+#if NET6_0_OR_GREATER
+                    return ToHexString();
+#else
                     return $"#{R:X2}{G:X2}{B:X2}{A:X2}";
+#endif
                 }
             default:
-                throw new ArgumentException("Invalid color format", nameof(format));
+                throw new ArgumentOutOfRangeException(nameof(format));
         }
     }
 
     object ICloneable.Clone()
         => new Composite(Value);
-    
+
+    #region Formatting
+
+#if NET6_0_OR_GREATER
+
+    // The channel and hex writers exist because an interpolated string rents a buffer from the
+    // array pool and formats each channel through a generic TryFormat that has to parse its format
+    // string first. Both forms here have a known maximum length, so the whole result is built in a
+    // stack buffer and the only allocation left is the string itself.
+
+    // "rgba(255, 255, 255, 255)" is the longest form the channel writer produces.
+    const int RGBA_MAX_LENGTH = 24;
+
+    [SkipLocalsInit]
+    private string ToChannelString(bool alpha)
+    {
+        Span<char> buffer = stackalloc char[RGBA_MAX_LENGTH];
+
+        buffer[0] = 'r';
+        buffer[1] = 'g';
+        buffer[2] = 'b';
+
+        var position = 3;
+
+        if (alpha)
+            buffer[position++] = 'a';
+
+        buffer[position++] = '(';
+
+        position = WriteChannel(buffer, position, R);
+        position = WriteSeparator(buffer, position);
+        position = WriteChannel(buffer, position, G);
+        position = WriteSeparator(buffer, position);
+        position = WriteChannel(buffer, position, B);
+
+        if (alpha)
+        {
+            position = WriteSeparator(buffer, position);
+            position = WriteChannel(buffer, position, A);
+        }
+
+        buffer[position++] = ')';
+
+        return new string(buffer[..position]);
+    }
+
+    [SkipLocalsInit]
+    private string ToHexString()
+    {
+        Span<char> buffer = stackalloc char[9];
+
+        buffer[0] = '#';
+
+        WriteHex(buffer, 1, R);
+        WriteHex(buffer, 3, G);
+        WriteHex(buffer, 5, B);
+        WriteHex(buffer, 7, A);
+
+        return new string(buffer);
+    }
+
+    // Writes a channel as decimal digits without a leading zero, and reports the position after it.
+    private static int WriteChannel(Span<char> destination, int position, byte value)
+    {
+        if (value >= 100)
+            destination[position++] = (char)('0' + (value / 100));
+
+        if (value >= 10)
+            destination[position++] = (char)('0' + ((value / 10) % 10));
+
+        destination[position++] = (char)('0' + (value % 10));
+
+        return position;
+    }
+
+    private static int WriteSeparator(Span<char> destination, int position)
+    {
+        destination[position] = ',';
+        destination[position + 1] = ' ';
+
+        return position + 2;
+    }
+
+    private static void WriteHex(Span<char> destination, int position, byte value)
+    {
+        const string DIGITS = "0123456789ABCDEF";
+
+        destination[position] = DIGITS[value >> 4];
+        destination[position + 1] = DIGITS[value & 0xF];
+    }
+
+#endif
+
+    #endregion
+
     #region Optimization
 
+    // Packs four channels into the single 32-bit field this type stores.
+    //
+    // Assigning the four byte fields at their own offsets instead leaves one-byte stores followed
+    // by a four-byte read of the same stack slot, which stalls store forwarding on every
+    // construction. Building the word in registers and storing it once avoids that entirely.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint Encode(byte r, byte g, byte b, byte a)
+        => ((uint)a << 24) | ((uint)r << 16) | ((uint)g << 8) | b;
+
+    // Kept as a branch chain rather than the four conditional moves Math.Min/Math.Max lower to.
+    // Every caller immediately branches on min == max anyway, and measured against the accessors
+    // that actually use it the conditional-move form was consistently a few percent slower.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void GetMinMax(out int min, out int max)
     {
@@ -957,10 +1126,10 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
 
         l = lS;
         c = Sqrt((aS * aS) + (bS * bS));
-        h = (float)(Math.Atan2(bS, aS) * (180 / Math.PI));
+        h = Atan2(bS, aS) * RADIANS_TO_DEGREES;
 
         if (h < 0)
-            h += 360f;
+            h += MAX_DEGREES;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1012,7 +1181,7 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private byte ShiftChannel(byte oldValue, int shift)
+    private static byte ShiftChannel(byte oldValue, int shift)
     {
         var newRed = oldValue + shift;
 
@@ -1100,15 +1269,15 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
 
             if (linearize)
             {
-                result = v <= SRGBLINEAR_THRESHOLD
-                    ? v / LINEAR_UPPERFACTOR
-                    : Math.Pow((v + LINEAR_INNERCURVE) / LINEAR_LOWERFACTOR, LINEAR_GAMMACOEFFICIENT);
+                result = v <= EXACT_SRGBLINEAR_THRESHOLD
+                    ? v / EXACT_UPPERFACTOR
+                    : Math.Pow((v + EXACT_INNERCURVE) / EXACT_LOWERFACTOR, EXACT_GAMMACOEFFICIENT);
             }
             else
             {
-                result = v <= GAMMA_2_2_THRESHOLD
-                    ? v * LINEAR_UPPERFACTOR
-                    : (LINEAR_LOWERFACTOR * Math.Pow(v, 1d / LINEAR_GAMMACOEFFICIENT)) - LINEAR_INNERCURVE;
+                result = v <= EXACT_GAMMA_2_2_THRESHOLD
+                    ? v * EXACT_UPPERFACTOR
+                    : (EXACT_LOWERFACTOR * Math.Pow(v, 1d / EXACT_GAMMACOEFFICIENT)) - EXACT_INNERCURVE;
             }
 
             table[i] = (float)result;
@@ -1205,6 +1374,18 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
 #endif
     }
 
+    // Single-precision arc tangent of a quotient. Going through the double-precision Math.Atan2
+    // pays for two conversions and a wider evaluation than a float result can carry anyway.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Atan2(float y, float x)
+    {
+#if NET6_0_OR_GREATER
+        return MathF.Atan2(y, x);
+#else
+        return (float)Math.Atan2(y, x);
+#endif
+    }
+
     // Single-precision square root. MathF is unavailable on netstandard2.0.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static float Sqrt(float value)
@@ -1216,9 +1397,10 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
 #endif
     }
 
-    // Splits bits of a byte into a 30-bit integer for Z-order curve calculation.
-    // Only the lowest 10 bits are used, so input should be in range [0,255].
-    private static int ZCurve(int a)
+    // Splits bits of a value into a 30-bit integer for Z-order curve calculation.
+    // Only the lowest 10 bits are used, so input should be in range [0,1023].
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint ZCurve(uint a)
     {
         // split out the lowest 10 bits to lowest 30 bits
         a = (a | (a << 16)) & ZCURVE_SHIFT16;
@@ -1395,26 +1577,24 @@ public readonly partial struct Composite : IEquatable<Color>, IEquatable<Composi
         y ^= x;
         z ^= y;
 
-        t = 0;
-
-        for (var k = HILBERT_BITS - 1; k >= 1; k--)
-            t ^= ((1u << k) - 1) & (0u - ((z >> k) & 1u));
+        // The correction the transform folds back into all three axes is the XOR of (2^k - 1) over
+        // every set bit k of z, which sets bit j exactly when an odd number of bits above j are set.
+        // That is a suffix parity, so the whole bit-serial accumulation collapses into a halving
+        // chain of shifts. Valid while HILBERT_BITS stays within the 16 bits the last shift covers.
+        t = z >> 1;
+        t ^= t >> 1;
+        t ^= t >> 2;
+        t ^= t >> 4;
+        t ^= t >> 8;
 
         x ^= t;
         y ^= t;
         z ^= t;
 
-        // Interleave the transpose into a single distance along the curve.
-        uint distance = 0;
-
-        for (var bit = HILBERT_BITS - 1; bit >= 0; bit--)
-        {
-            distance = (distance << 1) | ((x >> bit) & 1u);
-            distance = (distance << 1) | ((y >> bit) & 1u);
-            distance = (distance << 1) | ((z >> bit) & 1u);
-        }
-
-        return distance;
+        // Interleave the transpose into a single distance along the curve. Bit j of each axis lands
+        // at 3j (+1, +2), which is the same spread ZCurve performs, so the three axes are spread
+        // independently and merged rather than shifted in one bit at a time down a serial chain.
+        return ZCurve(z) | (ZCurve(y) << 1) | (ZCurve(x) << 2);
     }
 
     #endregion

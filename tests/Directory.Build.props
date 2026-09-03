@@ -5,5 +5,11 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SrcPath>..\..\src</SrcPath>
+
+    <!-- Routes dotnet test through Microsoft.Testing.Platform on the .NET 9 SDK, which reaches it by
+         overriding the VSTest target. The .NET 10 SDK removed that route and selects the runner in
+         global.json instead, so both are needed to cover both SDKs. Without the one that applies,
+         dotnet test fails outright and each suite has to be launched through its own executable. -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 </Project>

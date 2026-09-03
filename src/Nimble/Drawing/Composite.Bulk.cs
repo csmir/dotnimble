@@ -11,7 +11,7 @@ public readonly partial struct Composite
     #region Conversions
 
     /// <summary>
-    ///     Linearizes a span of colors, undoing the sRGB transfer function on each channel.
+    ///     Linearizes a span of colors, undoing the sRGB transfer function on each channel, as <see cref="GetLinear"/> does for a single color.
     /// </summary>
     /// <remarks>
     ///     Results are written as a structure of arrays: one span per channel rather than one interleaved span.
@@ -22,7 +22,7 @@ public readonly partial struct Composite
     /// <param name="r">Receives the linearized red channel, in the 0-1 range.</param>
     /// <param name="g">Receives the linearized green channel, in the 0-1 range.</param>
     /// <param name="b">Receives the linearized blue channel, in the 0-1 range.</param>
-    /// <exception cref="ArgumentException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
     public static void ToLinear(ReadOnlySpan<Composite> source, Span<float> r, Span<float> g, Span<float> b)
     {
         Fit(source.Length, r, nameof(r));
@@ -50,13 +50,14 @@ public readonly partial struct Composite
     /// </summary>
     /// <param name="source">The colors to measure.</param>
     /// <param name="destination">Receives the luminosity of each color, in the 0-1 range.</param>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="destination"/> is shorter than <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="destination"/> is shorter than <paramref name="source"/>.</exception>
     public static void ToLuminosity(ReadOnlySpan<Composite> source, Span<float> destination)
     {
         Fit(source.Length, destination, nameof(destination));
 
         destination = destination[..source.Length];
 
+        // Deliberately not vectorized. The table reads can't be made faster than they are scalar.
         for (var i = 0; i < source.Length; i++)
             destination[i] = source[i].GetLuminosity();
     }
@@ -71,7 +72,7 @@ public readonly partial struct Composite
     /// <param name="x">Receives the X component of each color.</param>
     /// <param name="y">Receives the Y component of each color.</param>
     /// <param name="z">Receives the Z component of each color.</param>
-    /// <exception cref="ArgumentException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
     public static void ToXYZ(ReadOnlySpan<Composite> source, Span<float> x, Span<float> y, Span<float> z)
     {
         Fit(source.Length, x, nameof(x));
@@ -107,7 +108,7 @@ public readonly partial struct Composite
     /// <param name="l">Receives the L* component of each color, in the 0-100 range.</param>
     /// <param name="a">Receives the a* component of each color.</param>
     /// <param name="b">Receives the b* component of each color.</param>
-    /// <exception cref="ArgumentException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
     public static void ToCIELAB(ReadOnlySpan<Composite> source, Span<float> l, Span<float> a, Span<float> b)
     {
         Fit(source.Length, l, nameof(l));
@@ -143,7 +144,7 @@ public readonly partial struct Composite
     /// <param name="l">Receives the L component of each color, in the 0-1 range.</param>
     /// <param name="a">Receives the a component of each color.</param>
     /// <param name="b">Receives the b component of each color.</param>
-    /// <exception cref="ArgumentException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
     public static void ToOKLAB(ReadOnlySpan<Composite> source, Span<float> l, Span<float> a, Span<float> b)
     {
         Fit(source.Length, l, nameof(l));
@@ -180,7 +181,7 @@ public readonly partial struct Composite
     /// <param name="l">Receives the lightness of each color, in the 0-1 range.</param>
     /// <param name="c">Receives the chroma of each color.</param>
     /// <param name="h">Receives the hue of each color, in the 0-360 degree range.</param>
-    /// <exception cref="ArgumentException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
     public static void ToOKLCH(ReadOnlySpan<Composite> source, Span<float> l, Span<float> c, Span<float> h)
     {
         Fit(source.Length, l, nameof(l));
@@ -211,7 +212,7 @@ public readonly partial struct Composite
     /// <param name="h">Receives the hue of each color, in the 0-360 degree range.</param>
     /// <param name="s">Receives the saturation of each color, in the 0-1 range.</param>
     /// <param name="l">Receives the lightness of each color, in the 0-1 range.</param>
-    /// <exception cref="ArgumentException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
     public static void ToHSL(ReadOnlySpan<Composite> source, Span<float> h, Span<float> s, Span<float> l)
     {
         Fit(source.Length, h, nameof(h));
@@ -247,7 +248,7 @@ public readonly partial struct Composite
     /// <param name="h">Receives the hue of each color, in the 0-360 degree range.</param>
     /// <param name="s">Receives the saturation of each color, in the 0-1 range.</param>
     /// <param name="v">Receives the value (brightness) of each color, in the 0-1 range.</param>
-    /// <exception cref="ArgumentException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when any destination is shorter than <paramref name="source"/>.</exception>
     public static void ToHSV(ReadOnlySpan<Composite> source, Span<float> h, Span<float> s, Span<float> v)
     {
         Fit(source.Length, h, nameof(h));
@@ -278,7 +279,7 @@ public readonly partial struct Composite
     /// <param name="source">The colors to index.</param>
     /// <param name="indexType">The type of index to generate.</param>
     /// <param name="destination">Receives the index of each color.</param>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="destination"/> is shorter than <paramref name="source"/>, or when <paramref name="indexType"/> is not a named value of <see cref="CompositeIndex"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="destination"/> is shorter than <paramref name="source"/>, or when <paramref name="indexType"/> is not a named value of <see cref="CompositeIndex"/>.</exception>
     public static void ToIndex(ReadOnlySpan<Composite> source, CompositeIndex indexType, Span<double> destination)
     {
         Fit(source.Length, destination, nameof(destination));
@@ -329,7 +330,7 @@ public readonly partial struct Composite
                     return;
                 }
             default:
-                throw new ArgumentException("Invalid index type.", nameof(indexType));
+                throw new ArgumentOutOfRangeException(nameof(indexType));
         }
     }
 
@@ -343,7 +344,7 @@ public readonly partial struct Composite
     /// </remarks>
     /// <param name="colors">The colors to sort in place.</param>
     /// <param name="indexType">The index to sort by. <see cref="CompositeIndex.HueHilbert"/> is the best default for an arbitrary set.</param>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="indexType"/> is not a named value of <see cref="CompositeIndex"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="indexType"/> is not a named value of <see cref="CompositeIndex"/>.</exception>
     public static void Sort(Span<Composite> colors, CompositeIndex indexType)
     {
         if (colors.Length < 2)
@@ -470,14 +471,18 @@ public readonly partial struct Composite
         Span<uint> distances = stackalloc uint[width];
 
         ref var lut = ref MemoryMarshal.GetArrayDataReference(VLINEAR_LUT);
+        ref var origin = ref MemoryMarshal.GetReference(source);
+        ref var target = ref MemoryMarshal.GetReference(destination);
 
         var i = 0;
 
         for (; i + width <= source.Length; i += width)
         {
+            ref var src = ref Unsafe.Add(ref origin, i);
+
             for (var k = 0; k < width; k++)
             {
-                var c = source[i + k];
+                var c = Unsafe.Add(ref src, k);
 
                 rawR[k] = c.R;
                 rawG[k] = c.G;
@@ -501,11 +506,13 @@ public readonly partial struct Composite
                 Quantize(a, OKLAB_A_MIN, OKLAB_A_MAX),
                 Quantize(bb, OKLAB_B_MIN, OKLAB_B_MAX)).CopyTo(distances);
 
+            ref var dst = ref Unsafe.Add(ref target, i);
+
             for (var k = 0; k < width; k++)
             {
                 var position = bands[k] + (distances[k] / (double)(1u << (HILBERT_BITS * 3)));
 
-                destination[i + k] = position * CFACTOR * CFACTOR;
+                Unsafe.Add(ref dst, k) = position * CFACTOR * CFACTOR;
             }
         }
 
@@ -593,31 +600,38 @@ public readonly partial struct Composite
         y ^= x;
         z ^= y;
 
-        t = Vector<uint>.Zero;
-
-        for (var k = HILBERT_BITS - 1; k >= 1; k--)
-            t ^= new Vector<uint>((1u << k) - 1) & Ones(z, k);
+        // Suffix parity of z, as the scalar side derives it. Nine dependent vector accumulations
+        // collapse into four, which is where most of the saving on this path comes from.
+        t = Vector.ShiftRightLogical(z, 1);
+        t ^= Vector.ShiftRightLogical(t, 1);
+        t ^= Vector.ShiftRightLogical(t, 2);
+        t ^= Vector.ShiftRightLogical(t, 4);
+        t ^= Vector.ShiftRightLogical(t, 8);
 
         x ^= t;
         y ^= t;
         z ^= t;
 
-        var distance = Vector<uint>.Zero;
-
-        for (var bit = HILBERT_BITS - 1; bit >= 0; bit--)
-        {
-            distance = Vector.ShiftLeft(distance, 1) | (Vector.ShiftRightLogical(x, bit) & Vector<uint>.One);
-            distance = Vector.ShiftLeft(distance, 1) | (Vector.ShiftRightLogical(y, bit) & Vector<uint>.One);
-            distance = Vector.ShiftLeft(distance, 1) | (Vector.ShiftRightLogical(z, bit) & Vector<uint>.One);
-        }
-
-        return distance;
+        // Three independent bit spreads instead of thirty serially dependent shift-in steps.
+        return ZCurve(z) | Vector.ShiftLeft(ZCurve(y), 1) | Vector.ShiftLeft(ZCurve(x), 2);
     }
 
     // All ones where the bit at k is set, all zeros where it is not.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector<uint> Ones(Vector<uint> value, int k)
         => Vector<uint>.Zero - (Vector.ShiftRightLogical(value, k) & Vector<uint>.One);
+
+    // Vectorized counterpart to the scalar ZCurve, over the same masks in the same order.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector<uint> ZCurve(Vector<uint> a)
+    {
+        a = (a | Vector.ShiftLeft(a, 16)) & new Vector<uint>(ZCURVE_SHIFT16);
+        a = (a | Vector.ShiftLeft(a, 08)) & new Vector<uint>(ZCURVE_SHIFT08);
+        a = (a | Vector.ShiftLeft(a, 04)) & new Vector<uint>(ZCURVE_SHIFT04);
+        a = (a | Vector.ShiftLeft(a, 02)) & new Vector<uint>(ZCURVE_SHIFT02);
+
+        return a;
+    }
 
     // Linear sRGB to OKLAB over whole vectors, in the order GetOKLAB applies it per color.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -648,9 +662,14 @@ public readonly partial struct Composite
         // taking a reference to it drops the check the indexer would otherwise emit per lane.
         ref var lut = ref MemoryMarshal.GetArrayDataReference(VLINEAR_LUT);
 
+        // The caller only enters this for a whole vector that fits, but that is a fact about the
+        // loop bound rather than one the indexer can prove, so the source is walked by reference to
+        // keep a bounds check off every lane.
+        ref var src = ref Unsafe.Add(ref MemoryMarshal.GetReference(source), offset);
+
         for (var k = 0; k < sr.Length; k++)
         {
-            var c = source[offset + k];
+            var c = Unsafe.Add(ref src, k);
 
             sr[k] = Unsafe.Add(ref lut, c.R);
             sg[k] = Unsafe.Add(ref lut, c.G);
@@ -709,12 +728,10 @@ public readonly partial struct Composite
 
     #endregion
 
-    // A destination is allowed to be longer than the source, so that one set of scratch buffers can
-    // be reused across batches of differing sizes without being reallocated for each.
     private static void Fit<T>(int length, Span<T> destination, string parameterName)
     {
         if (destination.Length < length)
-            throw new ArgumentException($"Destination must be at least {length} elements long to receive the result, but was {destination.Length}.", parameterName);
+            throw new ArgumentOutOfRangeException(parameterName, $"Destination must be at least {length} elements long to receive the result, but was {destination.Length}.");
     }
 }
 

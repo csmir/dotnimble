@@ -7,6 +7,7 @@
   <Folder Name="/Tests/">
     <File Path="tests/Directory.Build.props" />
     <Project Path="tests/Nimble.Tests.Benchmarking/Nimble.Tests.Benchmarking.csproj" Id="6840ce0c-eddc-4a9c-8f19-dfd9e85996f3" />
+    <Project Path="tests/Nimble.Tests.Drawing/Nimble.Tests.Drawing.csproj" />
     <Project Path="tests/Nimble.Tests.Extensions/Nimble.Tests.Extensions.csproj" Id="f0c8c5b8-22f5-4fbe-beb1-02817123bdcf" />
     <Project Path="tests/Nimble.Tests.ValueStringBuilder/Nimble.Tests.ValueStringBuilder.csproj" Id="9edb1ee9-12d8-4abb-a4ba-6dd48f439e46" />
   </Folder>
