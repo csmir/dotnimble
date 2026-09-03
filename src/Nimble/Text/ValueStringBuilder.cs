@@ -1,4 +1,4 @@
-﻿#if NET6_0_OR_GREATER
+﻿#if !NETSTANDARD2_0
 
 using System.Buffers;
 using System.ComponentModel;
@@ -1897,7 +1897,7 @@ public ref struct ValueStringBuilder : IDisposable
 
     #region Interpolated String Handling
 
-    #pragma warning disable IDE0060
+#pragma warning disable IDE0060
 
     /// <summary>
     ///     Appends the specified interpolated string to this instance.
@@ -1953,7 +1953,7 @@ public ref struct ValueStringBuilder : IDisposable
         return ref AppendLine();
     }
 
-    #pragma warning restore IDE0060
+#pragma warning restore IDE0060
 
     #endregion
 
